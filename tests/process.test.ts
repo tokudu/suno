@@ -60,9 +60,9 @@ describe('open key helpers', () => {
   });
 
   it('maps open keys to dj mix groups', () => {
-    expect(__test__.keyMixGroupFromOpenKey('12m')).toBe('Mix Set 1');
-    expect(__test__.keyMixGroupFromOpenKey('6d')).toBe('Mix Set 4');
-    expect(__test__.keyMixGroupFromOpenKey('11m')).toBe('Mix Set 6');
+    expect(__test__.keyMixGroupFromOpenKey('12m')).toBe('12m,1m,12d,1d');
+    expect(__test__.keyMixGroupFromOpenKey('6d')).toBe('6m,7m,6d,7d');
+    expect(__test__.keyMixGroupFromOpenKey('11m')).toBe('10m,11m,10d,11d');
   });
 });
 
@@ -118,7 +118,7 @@ describe('collectCategories', () => {
     expect(categories).toContain('Energy - Peak');
     expect(categories).toContain('Mood - Dark');
     expect(categories).toContain('Mood - Euphoric');
-    expect(categories).toContain('Key - Mix Set 1');
+    expect(categories).toContain('Key - 12m,1m,12d,1d');
   });
 
   it('uses fallback category when nothing matches', () => {

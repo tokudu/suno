@@ -625,12 +625,12 @@ function toOpenKey(musicalKey: string | null): string | null {
 function keyMixGroupFromOpenKey(openKey: string | null): string | null {
   if (!openKey) return null;
   const groups: Array<{ name: string; keys: string[] }> = [
-    { name: 'Mix Set 1', keys: ['12m', '1m', '12d', '1d'] },
-    { name: 'Mix Set 2', keys: ['2m', '3m', '2d', '3d'] },
-    { name: 'Mix Set 3', keys: ['4m', '5m', '4d', '5d'] },
-    { name: 'Mix Set 4', keys: ['6m', '7m', '6d', '7d'] },
-    { name: 'Mix Set 5', keys: ['8m', '9m', '8d', '9d'] },
-    { name: 'Mix Set 6', keys: ['10m', '11m', '10d', '11d'] },
+    { name: '12m,1m,12d,1d', keys: ['12m', '1m', '12d', '1d'] },
+    { name: '2m,3m,2d,3d', keys: ['2m', '3m', '2d', '3d'] },
+    { name: '4m,5m,4d,5d', keys: ['4m', '5m', '4d', '5d'] },
+    { name: '6m,7m,6d,7d', keys: ['6m', '7m', '6d', '7d'] },
+    { name: '8m,9m,8d,9d', keys: ['8m', '9m', '8d', '9d'] },
+    { name: '10m,11m,10d,11d', keys: ['10m', '11m', '10d', '11d'] },
   ];
   const found = groups.find((group) => group.keys.includes(openKey));
   return found?.name ?? null;

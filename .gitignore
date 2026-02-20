@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Generated build artifacts
+build/
+
+# Local source dataset (large, machine-specific)
+data/
+
+# Legacy generated dirs
+Export/
+Categories/
+out/
+in/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

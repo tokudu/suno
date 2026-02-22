@@ -3,23 +3,25 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
+import traktor from 'node-traktor';
 
 const execFileAsync = promisify(execFile);
 const RAW_API_MARKER = '--- Raw API Response ---';
 
 // Pipeline constants (no positional args)
 const DATA_DIR = 'data';
-const BUILD_DIR = 'build';
 const CSV_FILE = 'tracks-list.csv';
-const LIBRARY_JSON = path.join(BUILD_DIR, 'library.json');
-const LIBRARY_ZIP = path.join(BUILD_DIR, 'library.zip');
-const TRAKTOR_DIR = path.join(BUILD_DIR, 'traktor');
-const TRAKTOR_TRACKS_DIR = path.join(TRAKTOR_DIR, 'Tracks');
-const TRAKTOR_PLAYLISTS_DIR = path.join(TRAKTOR_DIR, 'Playlists');
-const REPORT_HTML = path.join(BUILD_DIR, 'library.html');
+const LIBRARY_JSON = path.join(DATA_DIR, 'library.json');
+const LIBRARY_ZIP = path.join(DATA_DIR, 'library.zip');
+const DEFAULT_EXPORT_DIR = '/Users/anton/Music/Suno';
+function getExportDir(): string { return process.env.EXPORT_DIR ?? DEFAULT_EXPORT_DIR; }
+function getExportTracksDir(): string { return path.join(getExportDir(), 'Tracks'); }
+function getExportPlaylistsDir(): string { return path.join(getExportDir(), 'Playlists'); }
+const REPORT_HTML = path.join(DATA_DIR, 'library.html');
 
 function logStep(message: string): void {
   console.log(chalk.bold.cyan(message));
@@ -96,9 +98,9 @@ type LibraryTrack = {
     isPublic: boolean | null;
     isExplicit: boolean | null;
     musicalKey: string | null;
-    keySource: 'metadata' | 'related' | 'aubio' | 'none' | null;
+    keySource: 'metadata' | 'related' | 'traktor' | 'aubio' | 'none' | null;
     bpm: number | null;
-    bpmSource: 'metadata' | 'related' | 'aubio' | 'none' | null;
+    bpmSource: 'metadata' | 'related' | 'traktor' | 'aubio' | 'none' | null;
   };
   categories: string[];
   metadata?: Record<string, unknown>;
@@ -149,7 +151,7 @@ type TrackContext = {
 };
 
 type CliOptions = {
-  clean: boolean;
+  exportType: 'music' | 'traktor' | null;
 };
 
 function nowIso(): string {
@@ -158,18 +160,236 @@ function nowIso(): string {
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
-  let clean = false;
+  let exportType: 'music' | 'traktor' | null = null;
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
     if (arg === '--') continue;
-    if (arg === '--clean') {
-      clean = true;
+    if (arg === '--export') {
+      const value = args[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('Missing value for --export. Supported: music, traktor');
+      }
+      if (value !== 'music' && value !== 'traktor') {
+        throw new Error(`Unsupported export type: ${value}. Supported: music, traktor`);
+      }
+      exportType = value;
+      i += 1;
       continue;
     }
-    throw new Error(`Unsupported argument: ${arg}. Only --clean is supported.`);
+    throw new Error(`Unsupported argument: ${arg}. Supported: --export music|traktor`);
   }
 
-  return { clean };
+  return { exportType };
+}
+
+function normalizePathForMatch(p: string): string {
+  return path.resolve(p).replace(/\\/g, '/').toLowerCase();
+}
+
+function traktorDirFromAbsDir(absDir: string): string {
+  const normalized = absDir.replace(/\\/g, '/').replace(/\/+$/, '');
+  const body = normalized.replace(/^\/+/, '').split('/').join('/:');
+  return `/:${body}/:`;
+}
+
+function traktorPrimaryKeyFromAbsPath(absPath: string, volume: string): string {
+  const normalized = absPath.replace(/\\/g, '/').replace(/^\/+/, '').split('/').join('/:');
+  return `${volume}/:${normalized}`;
+}
+
+function absPathFromTraktorLocation(dirAttr: string, fileAttr: string): string {
+  const dir = dirAttr
+    .replace(/^\/:/, '/')
+    .replace(/:\//g, '/')
+    .replace(/:$/, '');
+  return path.resolve(path.join(dir, fileAttr));
+}
+
+async function findTraktorCollectionPath(): Promise<string | null> {
+  const base = path.join(process.env.HOME ?? '', 'Documents', 'Native Instruments');
+  if (!(await fileExists(base))) return null;
+  const items = await fs.readdir(base, { withFileTypes: true });
+  const candidates: Array<{ path: string; rank: number; mtime: number }> = [];
+
+  for (const item of items) {
+    if (!item.isDirectory()) continue;
+    if (!/^Traktor\b/i.test(item.name)) continue;
+    const collectionPath = path.join(base, item.name, 'collection.nml');
+    if (!(await fileExists(collectionPath))) continue;
+
+    const version = item.name.match(/Traktor\s+(\d+)(?:\.(\d+))?(?:\.(\d+))?/i);
+    const v1 = Number(version?.[1] ?? 0);
+    const v2 = Number(version?.[2] ?? 0);
+    const v3 = Number(version?.[3] ?? 0);
+    const rank = v1 * 1_000_000 + v2 * 1_000 + v3;
+    const stat = await fs.stat(collectionPath);
+    candidates.push({ path: collectionPath, rank, mtime: stat.mtimeMs });
+  }
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.rank - a.rank || b.mtime - a.mtime);
+  return candidates[0].path;
+}
+
+async function stepTraktorUpsert(state: LibraryState): Promise<void> {
+  logStep('Upserting Traktor collection...');
+
+  const collectionPath = await findTraktorCollectionPath();
+  if (!collectionPath) {
+    logInfo('No Traktor collection.nml found under ~/Documents/Native Instruments. Skipping Traktor upsert.');
+    return;
+  }
+
+  const CollectionCtor = (traktor as unknown as { Collection: new () => { load: (p: string) => Promise<unknown>; toXML: () => string; _tree?: unknown } }).Collection;
+  const collection = new CollectionCtor();
+  await collection.load(collectionPath);
+  const tree = (collection as unknown as { _tree?: { findall: (p: string) => any[] } })._tree;
+  if (!tree) throw new Error('Failed to load Traktor XML tree from collection');
+
+  const collectionEl = tree.findall('COLLECTION')[0];
+  if (!collectionEl) throw new Error('Invalid collection.nml: missing COLLECTION');
+
+  const playlistsEl = tree.findall('PLAYLISTS')[0];
+  if (!playlistsEl) throw new Error('Invalid collection.nml: missing PLAYLISTS');
+
+  const rootNode = playlistsEl.findall('NODE').find((node: any) => node.get('TYPE') === 'FOLDER' && node.get('NAME') === '$ROOT') ?? playlistsEl.findall('NODE')[0];
+  if (!rootNode) throw new Error('Invalid collection.nml: missing PLAYLISTS root NODE');
+
+  const subnodes = rootNode.findall('SUBNODES')[0];
+  if (!subnodes) throw new Error('Invalid collection.nml: missing SUBNODES');
+
+  const existingEntries = collectionEl.findall('ENTRY');
+  let volumeHint = 'Macintosh HD';
+  for (const entry of existingEntries) {
+    const loc = entry.findall('LOCATION')[0];
+    const volume = loc?.get('VOLUME');
+    if (volume) {
+      volumeHint = String(volume);
+      break;
+    }
+  }
+
+  const entryByPath = new Map<string, any>();
+  for (const entry of existingEntries) {
+    const loc = entry.findall('LOCATION')[0];
+    if (!loc) continue;
+    const dirAttr = loc.get('DIR');
+    const fileAttr = loc.get('FILE');
+    if (!dirAttr || !fileAttr) continue;
+    const abs = absPathFromTraktorLocation(String(dirAttr), String(fileAttr));
+    entryByPath.set(normalizePathForMatch(abs), entry);
+  }
+
+  const exportedTracks = state.tracks
+    .filter((t) => t.availability.exported && t.paths.traktor)
+    .map((t) => ({
+      track: t,
+      exportAbsPath: path.resolve(String(t.paths.traktor)),
+      title: toTitleCase(t.parsed.title ?? t.title ?? t.id),
+      artist: (t.parsed.artist ?? 'TOKUDU').trim() || 'TOKUDU',
+    }));
+
+  let createdEntries = 0;
+  let updatedEntries = 0;
+  for (const item of exportedTracks) {
+    const key = normalizePathForMatch(item.exportAbsPath);
+    const existing = entryByPath.get(key);
+    if (existing) {
+      existing.set('TITLE', item.title);
+      existing.set('ARTIST', item.artist);
+      updatedEntries += 1;
+      continue;
+    }
+
+    const entry = (collectionEl as any).makeelement('ENTRY', {
+      MODIFIED_DATE: new Date().toISOString().slice(0, 10).replace(/-/g, '/'),
+      MODIFIED_TIME: String(Math.floor(Date.now() / 1000) % 100000),
+      TITLE: item.title,
+      ARTIST: item.artist,
+    });
+    const location = (entry as any).makeelement('LOCATION', {
+      DIR: traktorDirFromAbsDir(path.dirname(item.exportAbsPath)),
+      FILE: path.basename(item.exportAbsPath),
+      VOLUME: volumeHint,
+      VOLUMEID: volumeHint,
+    });
+    entry.append(location);
+    const infoAttrs: Record<string, string> = {
+      IMPORT_DATE: new Date().toISOString().slice(0, 10).replace(/-/g, '/'),
+    };
+    if (typeof item.track.duration === 'number') {
+      infoAttrs.PLAYTIME = String(Math.max(0, Math.round(item.track.duration)));
+      infoAttrs.PLAYTIME_FLOAT = String(Math.max(0, item.track.duration));
+    }
+    entry.append((entry as any).makeelement('INFO', infoAttrs));
+    collectionEl.append(entry);
+    entryByPath.set(key, entry);
+    createdEntries += 1;
+  }
+  collectionEl.set('ENTRIES', String(collectionEl.findall('ENTRY').length));
+
+  const playlistNodes = subnodes.findall('NODE').filter((n: any) => n.get('TYPE') === 'PLAYLIST');
+  const playlistByName = new Map<string, any>();
+  for (const node of playlistNodes) {
+    const name = String(node.get('NAME') ?? '');
+    if (name) playlistByName.set(name, node);
+  }
+
+  let upsertedPlaylists = 0;
+  for (const playlist of state.playlists) {
+    const name = playlist.name;
+    let node = playlistByName.get(name);
+    if (!node) {
+      node = (subnodes as any).makeelement('NODE', { TYPE: 'PLAYLIST', NAME: name });
+      const playlistEl = (node as any).makeelement('PLAYLIST', {
+        ENTRIES: '0',
+        TYPE: 'LIST',
+        UUID: randomUUID().replace(/-/g, ''),
+      });
+      node.append(playlistEl);
+      subnodes.append(node);
+      playlistByName.set(name, node);
+    }
+
+    const playlistEl = node.findall('PLAYLIST')[0];
+    if (!playlistEl) continue;
+    const existingKeys = new Set<string>();
+    for (const e of playlistEl.findall('ENTRY')) {
+      const pk = e.findall('PRIMARYKEY')[0];
+      const key = pk?.get('KEY');
+      if (key) existingKeys.add(String(key));
+    }
+
+    const desiredKeys: string[] = [];
+    for (const trackId of playlist.trackIds) {
+      const track = state.tracks.find((t) => t.id === trackId);
+      if (!track?.paths.traktor) continue;
+      const abs = path.resolve(track.paths.traktor);
+      desiredKeys.push(traktorPrimaryKeyFromAbsPath(abs, volumeHint));
+    }
+
+    while (playlistEl.findall('ENTRY').length) {
+      playlistEl.remove(playlistEl.findall('ENTRY')[0]);
+    }
+    for (const key of desiredKeys) {
+      const entryEl = (playlistEl as any).makeelement('ENTRY', {});
+      const pk = (entryEl as any).makeelement('PRIMARYKEY', { TYPE: 'TRACK', KEY: key });
+      entryEl.append(pk);
+      playlistEl.append(entryEl);
+    }
+    playlistEl.set('ENTRIES', String(desiredKeys.length));
+    upsertedPlaylists += 1;
+  }
+
+  subnodes.set('COUNT', String(subnodes.findall('NODE').length));
+
+  const backupPath = `${collectionPath}.bak`;
+  if (!(await fileExists(backupPath))) {
+    await fs.copyFile(collectionPath, backupPath);
+  }
+  await fs.writeFile(collectionPath, collection.toXML(), 'utf8');
+  logOk(`Traktor collection upsert complete: entries+${createdEntries}, entries~${updatedEntries}, playlists=${upsertedPlaylists}`);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -269,8 +489,16 @@ async function readLibraryStateIfExists(): Promise<LibraryState | null> {
 
 async function writeLibraryState(state: LibraryState): Promise<void> {
   state.updatedAt = nowIso();
-  await ensureDir(BUILD_DIR);
-  const flattenedTracks = state.tracks.map((track) => ({
+  await ensureDir(DATA_DIR);
+  const tracksById = new Map(state.tracks.map((track) => [track.id, track]));
+  const sortedTracks = [...state.tracks].sort((a, b) => {
+    const ta = createdAtSortValue(a.createdAt);
+    const tb = createdAtSortValue(b.createdAt);
+    if (ta !== tb) return tb - ta;
+    return b.id.localeCompare(a.id);
+  });
+
+  const flattenedTracks = sortedTracks.map((track) => ({
     id: track.id,
     title: track.parsed.title ?? track.title,
     csvTitle: track.title,
@@ -317,10 +545,16 @@ async function writeLibraryState(state: LibraryState): Promise<void> {
   const out = {
     ...state,
     tracks: flattenedTracks,
-    playlists: state.playlists.map((playlist) => ({
-      ...playlist,
-      path: playlist.path ?? playlist.exportPath ?? null,
-    })),
+    playlists: state.playlists.map((playlist) => {
+      const trackIds = playlist.groupKey === 'DJ Sets'
+        ? playlist.trackIds
+        : sortTrackIdsByCreatedAt(playlist.trackIds, tracksById);
+      return {
+        ...playlist,
+        trackIds,
+        path: playlist.path ?? playlist.exportPath ?? null,
+      };
+    }),
   };
   const tmp = `${LIBRARY_JSON}.tmp`;
   await fs.writeFile(tmp, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
@@ -484,6 +718,120 @@ function modeNumber(values: number[]): number | null {
   return sorted[0]?.[0] ?? null;
 }
 
+function synchsafeToInt(buf: Buffer): number {
+  return (buf[0] << 21) | (buf[1] << 14) | (buf[2] << 7) | buf[3];
+}
+
+function decodeId3TextFrame(frameData: Buffer): string {
+  if (frameData.length === 0) return '';
+  const encoding = frameData[0];
+  const body = frameData.slice(1);
+  if (encoding === 0) return body.toString('latin1').replace(/\0+$/g, '');
+  if (encoding === 3) return body.toString('utf8').replace(/\0+$/g, '');
+  if (encoding === 1) {
+    if (body.length < 2) return body.toString('utf16le').replace(/\0+$/g, '');
+    const bom = body.slice(0, 2);
+    const text = body.slice(2);
+    if (bom[0] === 0xfe && bom[1] === 0xff) {
+      const swapped = Buffer.alloc(text.length);
+      for (let i = 0; i + 1 < text.length; i += 2) {
+        swapped[i] = text[i + 1];
+        swapped[i + 1] = text[i];
+      }
+      return swapped.toString('utf16le').replace(/\0+$/g, '');
+    }
+    return text.toString('utf16le').replace(/\0+$/g, '');
+  }
+  if (encoding === 2) {
+    const swapped = Buffer.alloc(body.length);
+    for (let i = 0; i + 1 < body.length; i += 2) {
+      swapped[i] = body[i + 1];
+      swapped[i + 1] = body[i];
+    }
+    return swapped.toString('utf16le').replace(/\0+$/g, '');
+  }
+  return body.toString('utf8').replace(/\0+$/g, '');
+}
+
+function openKeyToMusicalKey(openKey: string): string | null {
+  const normalized = openKey.trim().toLowerCase();
+  const map: Record<string, string> = {
+    '1d': 'C Major',
+    '2d': 'G Major',
+    '3d': 'D Major',
+    '4d': 'A Major',
+    '5d': 'E Major',
+    '6d': 'B Major',
+    '7d': 'F# Major',
+    '8d': 'C# Major',
+    '9d': 'Ab Major',
+    '10d': 'Eb Major',
+    '11d': 'Bb Major',
+    '12d': 'F Major',
+    '1m': 'A Minor',
+    '2m': 'E Minor',
+    '3m': 'B Minor',
+    '4m': 'F# Minor',
+    '5m': 'C# Minor',
+    '6m': 'G# Minor',
+    '7m': 'Eb Minor',
+    '8m': 'Bb Minor',
+    '9m': 'F Minor',
+    '10m': 'C Minor',
+    '11m': 'G Minor',
+    '12m': 'D Minor',
+  };
+  return map[normalized] ?? null;
+}
+
+async function readId3TempoAndKey(audioPath: string): Promise<{ bpm: number | null; musicalKey: string | null }> {
+  try {
+    const header = Buffer.alloc(10);
+    const fh = await fs.open(audioPath, 'r');
+    await fh.read(header, 0, 10, 0);
+    if (header.slice(0, 3).toString('ascii') !== 'ID3') {
+      await fh.close();
+      return { bpm: null, musicalKey: null };
+    }
+
+    const version = header[3];
+    const tagSize = synchsafeToInt(header.slice(6, 10));
+    const tagBody = Buffer.alloc(tagSize);
+    await fh.read(tagBody, 0, tagSize, 10);
+    await fh.close();
+
+    let offset = 0;
+    let bpm: number | null = null;
+    let musicalKey: string | null = null;
+
+    while (offset + 10 <= tagBody.length) {
+      const frameId = tagBody.slice(offset, offset + 4).toString('ascii');
+      if (!frameId.trim()) break;
+      const sizeBytes = tagBody.slice(offset + 4, offset + 8);
+      const frameSize = version === 4 ? synchsafeToInt(sizeBytes) : sizeBytes.readUInt32BE(0);
+      if (frameSize <= 0) break;
+      const start = offset + 10;
+      const end = start + frameSize;
+      if (end > tagBody.length) break;
+      const frameData = tagBody.slice(start, end);
+
+      if (frameId === 'TBPM') {
+        bpm = parseBpmCandidate(decodeId3TextFrame(frameData));
+      } else if (frameId === 'TKEY') {
+        const raw = decodeId3TextFrame(frameData).trim();
+        musicalKey = openKeyToMusicalKey(raw) ?? extractMusicalKeyFromText(raw);
+      }
+
+      offset = end;
+      if (bpm !== null && musicalKey !== null) break;
+    }
+
+    return { bpm, musicalKey };
+  } catch {
+    return { bpm: null, musicalKey: null };
+  }
+}
+
 function collectReferencedIdsFromValue(value: unknown, out: Set<string>): void {
   if (typeof value === 'string') {
     const matches = value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi);
@@ -557,6 +905,24 @@ function toTitleCase(value: string): string {
 
 function safeFileName(value: string): string {
   return value.replace(/[/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+}
+
+function computeExpectedTraktorTrackPaths(tracks: LibraryTrack[]): Map<string, string> {
+  const exportNameUsed = new Set<string>();
+  const targets = new Map<string, string>();
+
+  for (const track of tracks) {
+    if (!track.paths.mp3) continue;
+    const title = toTitleCase(track.parsed.title ?? track.title ?? track.id);
+    let exportName = safeFileName(`TOKUDU - ${title}.mp3`);
+    if (exportNameUsed.has(exportName)) {
+      exportName = safeFileName(`TOKUDU - ${title} [${track.id.slice(0, 8)}].mp3`);
+    }
+    exportNameUsed.add(exportName);
+    targets.set(track.id, path.join(getExportTracksDir(), exportName));
+  }
+
+  return targets;
 }
 
 function extractMusicalKeyFromText(value: string): string | null {
@@ -634,6 +1000,278 @@ function keyMixGroupFromOpenKey(openKey: string | null): string | null {
   ];
   const found = groups.find((group) => group.keys.includes(openKey));
   return found?.name ?? null;
+}
+
+function parseOpenKey(openKey: string | null): { n: number; mode: 'm' | 'd' } | null {
+  if (!openKey) return null;
+  const match = openKey.match(/^(\d{1,2})([md])$/i);
+  if (!match) return null;
+  const n = Number(match[1]);
+  if (!Number.isFinite(n) || n < 1 || n > 12) return null;
+  const mode = match[2].toLowerCase() === 'm' ? 'm' : 'd';
+  return { n, mode };
+}
+
+function circularDistance12(a: number, b: number): number {
+  const d = Math.abs(a - b);
+  return Math.min(d, 12 - d);
+}
+
+function keyCompatibilityScore(a: string | null, b: string | null): number {
+  const ka = parseOpenKey(a);
+  const kb = parseOpenKey(b);
+  if (!ka || !kb) return 0.35;
+  if (ka.n === kb.n && ka.mode === kb.mode) return 1.0;
+  if (ka.n === kb.n && ka.mode !== kb.mode) return 0.85;
+  if (ka.mode === kb.mode && circularDistance12(ka.n, kb.n) === 1) return 0.8;
+  if (ka.mode !== kb.mode && circularDistance12(ka.n, kb.n) === 1) return 0.55;
+  return 0.15;
+}
+
+function estimateTrackBpm(track: LibraryTrack): number | null {
+  if (typeof track.parsed.bpm === 'number') return track.parsed.bpm;
+  if (track.categories.includes('BPM - <80')) return 70;
+  if (track.categories.includes('BPM - 80-110')) return 95;
+  if (track.categories.includes('BPM - 110-135')) return 122;
+  if (track.categories.includes('BPM - >135')) return 145;
+  return null;
+}
+
+function buildTrackSearchText(track: LibraryTrack): string {
+  return [
+    track.parsed.title ?? track.title ?? '',
+    track.parsed.tags ?? '',
+    track.parsed.displayTags ?? '',
+    track.parsed.prompt ?? '',
+    track.parsed.lyrics ?? '',
+    ...track.categories,
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+function trackEnergyLevel(track: LibraryTrack): 'high' | 'mid' | 'low' | null {
+  for (const cat of track.categories) {
+    if (cat === 'Energy - High') return 'high';
+    if (cat === 'Energy - Mid') return 'mid';
+    if (cat === 'Energy - Low') return 'low';
+  }
+  return null;
+}
+
+type DjSetProfile = {
+  name: string;
+  keywords: string[];
+  startBpm: number;
+  endBpm: number;
+  preferEnergy: ('mid' | 'high')[];
+  targetMinutes: number;
+};
+
+function generateDjSetPlaylists(tracks: LibraryTrack[]): Array<{ name: string; trackIds: string[] }> {
+  if (tracks.length === 0) return [];
+
+  const profiles: DjSetProfile[] = [
+    { name: 'Warmup Grooves', keywords: ['house', 'deep', 'dubby', 'groove', 'minimal', 'soul'], startBpm: 92, endBpm: 122, preferEnergy: ['mid'], targetMinutes: 90 },
+    { name: 'Bass Pressure', keywords: ['trap', 'bass', '808', 'club', 'drop', 'festival'], startBpm: 90, endBpm: 145, preferEnergy: ['mid', 'high'], targetMinutes: 120 },
+    { name: 'Dark Warehouse', keywords: ['dark', 'warehouse', 'tech', 'industrial', 'gritty', 'hypnotic'], startBpm: 105, endBpm: 132, preferEnergy: ['mid', 'high'], targetMinutes: 90 },
+    { name: 'Global Bounce', keywords: ['latin', 'afro', 'reggaeton', 'dancehall', 'tribal', 'percussion'], startBpm: 95, endBpm: 126, preferEnergy: ['mid', 'high'], targetMinutes: 90 },
+    { name: 'Euphoric Lift', keywords: ['euphoric', 'anthem', 'uplifting', 'festival', 'peak'], startBpm: 100, endBpm: 136, preferEnergy: ['high'], targetMinutes: 90 },
+    { name: 'Late Night Dub', keywords: ['dub', 'reggae', 'lofi', 'smoky', 'spacey', 'half-time'], startBpm: 72, endBpm: 118, preferEnergy: ['mid'], targetMinutes: 90 },
+    { name: 'Rap To Rave', keywords: ['hip hop', 'rap', 'spoken', 'electro', 'rave', 'party'], startBpm: 82, endBpm: 132, preferEnergy: ['mid', 'high'], targetMinutes: 120 },
+    { name: 'Sunset To Peak', keywords: ['sunset', 'warm', 'melodic', 'club', 'peak', 'night'], startBpm: 98, endBpm: 134, preferEnergy: ['mid', 'high'], targetMinutes: 120 },
+  ];
+
+  const desiredSetCount =
+    tracks.length >= 280 ? 10 :
+    tracks.length >= 220 ? 9 :
+    tracks.length >= 170 ? 8 :
+    tracks.length >= 130 ? 7 :
+    tracks.length >= 90 ? 6 :
+    tracks.length >= 60 ? 5 :
+    3;
+
+  const setCount = Math.min(profiles.length, Math.max(1, desiredSetCount));
+
+  // Rank profiles by how many library tracks match their keywords, pick the best N
+  const profileScores = profiles.map((profile) => {
+    let matchCount = 0;
+    for (const track of tracks) {
+      const text = buildTrackSearchText(track);
+      const bpm = estimateTrackBpm(track);
+      const bpmOk = typeof bpm === 'number' && bpm >= profile.startBpm - 10 && bpm <= profile.endBpm + 10;
+      const keywordHits = profile.keywords.filter((k) => text.includes(k.toLowerCase())).length;
+      if (keywordHits > 0 && bpmOk) matchCount += 1;
+    }
+    return { profile, matchCount };
+  });
+  profileScores.sort((a, b) => b.matchCount - a.matchCount);
+  const selectedProfiles = profileScores.slice(0, setCount).map((ps) => ps.profile);
+
+  const playCounts = tracks.map((t) => {
+    const n = Number(t.metadata?.play_count);
+    return Number.isFinite(n) ? n : 0;
+  });
+  const maxPlays = Math.max(1, ...playCounts);
+
+  const usage = new Map<string, number>();
+
+  const sets: Array<{ name: string; trackIds: string[] }> = [];
+  for (const profile of selectedProfiles) {
+    const scoredPool = tracks.map((track) => {
+      const text = buildTrackSearchText(track);
+      const keywordHits = profile.keywords.filter((k) => text.includes(k.toLowerCase())).length;
+      const vibeScore = keywordHits / Math.max(1, profile.keywords.length);
+      const bpm = estimateTrackBpm(track);
+      const bpmInRange = typeof bpm === 'number' && bpm >= profile.startBpm - 10 && bpm <= profile.endBpm + 10 ? 1 : 0;
+      const plays = Number(track.metadata?.play_count);
+      const playScore = Number.isFinite(plays) ? Math.min(1, Math.log10(plays + 1) / Math.log10(maxPlays + 1)) : 0;
+      const publishedScore = track.parsed.isPublic ? 1 : 0;
+      const energy = trackEnergyLevel(track);
+      const energyFit = energy && (profile.preferEnergy as string[]).includes(energy) ? 1 : 0;
+      return { track, bpm, openKey: toOpenKey(track.parsed.musicalKey), vibeScore, bpmInRange, playScore, publishedScore, energyFit };
+    });
+
+    const pool = scoredPool
+      .filter((row) => row.vibeScore > 0 || row.bpmInRange > 0)
+      .sort((a, b) => (b.vibeScore + b.publishedScore + b.playScore + b.energyFit) - (a.vibeScore + a.publishedScore + a.playScore + a.energyFit));
+
+    const fallbackPool = [...scoredPool].sort(
+      (a, b) => (b.publishedScore + b.playScore) - (a.publishedScore + a.playScore),
+    );
+    const sourcePool = pool.length >= 20 ? pool : fallbackPool;
+
+    // Target size based on set duration: ~3 min avg per track with mixing overlap
+    const avgTrackMinutes = 3;
+    const targetSize = sourcePool.length >= 20
+      ? Math.min(Math.round(profile.targetMinutes / avgTrackMinutes), sourcePool.length)
+      : Math.min(12, sourcePool.length);
+    if (targetSize === 0) continue;
+
+    const chosen: typeof sourcePool = [];
+    const used = new Set<string>();
+
+    const first = [...sourcePool]
+      .sort((a, b) => {
+        const aBpm = a.bpm ?? profile.startBpm;
+        const bBpm = b.bpm ?? profile.startBpm;
+        const aScore = a.vibeScore * 2 + a.publishedScore + a.playScore * 2 + a.energyFit - Math.abs(aBpm - profile.startBpm) / 60;
+        const bScore = b.vibeScore * 2 + b.publishedScore + b.playScore * 2 + b.energyFit - Math.abs(bBpm - profile.startBpm) / 60;
+        return bScore - aScore;
+      })[0];
+
+    if (first) {
+      chosen.push(first);
+      used.add(first.track.id);
+      usage.set(first.track.id, (usage.get(first.track.id) ?? 0) + 1);
+    }
+
+    while (chosen.length < targetSize) {
+      const prev = chosen[chosen.length - 1];
+      const progress = chosen.length / Math.max(1, targetSize - 1);
+      const targetBpm = profile.startBpm + (profile.endBpm - profile.startBpm) * progress;
+      let best: (typeof sourcePool)[number] | null = null;
+      let bestScore = -Infinity;
+
+      for (const cand of sourcePool) {
+        if (used.has(cand.track.id)) continue;
+        const bpm = cand.bpm ?? targetBpm;
+        const bpmFit = 1 - Math.min(1, Math.abs(bpm - targetBpm) / 35);
+
+        // Enforce ascending BPM: hard penalty for drops, scaled by how far back it goes
+        let monotonicPenalty = 0;
+        if (prev && typeof prev.bpm === 'number') {
+          const bpmDrop = prev.bpm - bpm;
+          if (bpmDrop > 3) monotonicPenalty = 0.5 + Math.min(1.5, bpmDrop / 10);
+        }
+
+        const keyFit = prev ? keyCompatibilityScore(prev.openKey, cand.openKey) : 0.5;
+        const reusePenalty = (usage.get(cand.track.id) ?? 0) * 0.5;
+
+        // Energy progression: prefer mid early, high later
+        let energyProgFit = 0;
+        const energy = trackEnergyLevel(cand.track);
+        if (energy === 'high' && progress > 0.4) energyProgFit = 0.4;
+        else if (energy === 'mid' && progress <= 0.5) energyProgFit = 0.3;
+        else if (energy === 'high' && progress <= 0.4) energyProgFit = -0.1;
+
+        const score =
+          cand.vibeScore * 2.1 +
+          cand.publishedScore * 1.2 +
+          cand.playScore * 1.8 +
+          bpmFit * 2.5 +
+          keyFit * 1.7 +
+          cand.energyFit * 0.8 +
+          energyProgFit -
+          monotonicPenalty -
+          reusePenalty;
+
+        if (score > bestScore) {
+          best = cand;
+          bestScore = score;
+        }
+      }
+
+      if (!best) break;
+      chosen.push(best);
+      used.add(best.track.id);
+      usage.set(best.track.id, (usage.get(best.track.id) ?? 0) + 1);
+    }
+
+    const trackIds = chosen.map((row) => row.track.id);
+    if (trackIds.length > 0) {
+      sets.push({ name: profile.name, trackIds });
+    }
+  }
+
+  return sets;
+}
+
+type StaticPlaylistEntry = { id: string; name: string };
+
+async function loadStaticPlaylists(tracks: LibraryTrack[]): Promise<Array<{ name: string; trackIds: string[] }>> {
+  const staticFiles: Array<{ file: string; name: string }> = [
+    { file: path.join(DATA_DIR, 'da-final-drop.json'), name: 'Da Final Drop' },
+    { file: path.join(DATA_DIR, 'da-final-drop-v1.json'), name: 'Da Final Drop The Slow Burn' },
+    { file: path.join(DATA_DIR, 'da-final-drop-v2.json'), name: 'Da Final Drop The Genre Journey' },
+    { file: path.join(DATA_DIR, 'da-final-drop-v3.json'), name: 'Da Final Drop Peak Hour Express' },
+  ];
+
+  const trackIdSet = new Set(tracks.map((t) => t.id));
+  const results: Array<{ name: string; trackIds: string[] }> = [];
+
+  for (const { file, name } of staticFiles) {
+    try {
+      const raw = await fs.readFile(file, 'utf-8');
+      const entries: StaticPlaylistEntry[] = JSON.parse(raw);
+      if (!Array.isArray(entries)) continue;
+      const trackIds = entries
+        .map((e) => e.id)
+        .filter((id): id is string => typeof id === 'string' && trackIdSet.has(id));
+      if (trackIds.length > 0) {
+        results.push({ name, trackIds });
+      }
+    } catch {
+      // Static playlist file missing or invalid — skip silently
+    }
+  }
+
+  return results;
+}
+
+function createdAtSortValue(createdAt: string | null): number {
+  if (!createdAt) return Number.POSITIVE_INFINITY;
+  const ms = Date.parse(createdAt);
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+}
+
+function sortTrackIdsByCreatedAt(ids: string[], tracksById: Map<string, LibraryTrack>): string[] {
+  return [...ids].sort((a, b) => {
+    const ta = createdAtSortValue(tracksById.get(a)?.createdAt ?? null);
+    const tb = createdAtSortValue(tracksById.get(b)?.createdAt ?? null);
+    if (ta !== tb) return ta - tb;
+    return a.localeCompare(b);
+  });
 }
 
 function inferMusicalKeyFromMidiNotes(notes: number[]): string | null {
@@ -1019,7 +1657,7 @@ async function stepImport(state: LibraryState, existing: LibraryState | null): P
   for (const row of missingRows) {
     missingTxtLines.push(`${row.id},${row.mp3},${row.wav},${row.txt},`);
   }
-  await fs.writeFile(path.join(BUILD_DIR, 'missing-tracks.txt'), `${missingTxtLines.join('\n')}\n`, 'utf8');
+  await fs.writeFile(path.join(DATA_DIR, 'missing-tracks.txt'), `${missingTxtLines.join('\n')}\n`, 'utf8');
 
   await writeLibraryState(state);
   logOk(
@@ -1134,6 +1772,50 @@ async function stepProcess(state: LibraryState): Promise<void> {
   }
   bar.stop();
   logOk(`Per-track processing complete: checkpoints saved=${savedCount}, mp3 generated=${mp3Generated}`);
+
+  const expectedTraktorTargets = computeExpectedTraktorTrackPaths(state.tracks);
+  for (const track of state.tracks) {
+    const expectedAbs = expectedTraktorTargets.get(track.id);
+    if (!expectedAbs) continue;
+    track.paths.traktor = path.relative(process.cwd(), expectedAbs);
+  }
+
+  logStep('Backfilling BPM/Key from exported Traktor tags...');
+  const exportDirExists = await fileExists(getExportTracksDir());
+  let traktorChanged = 0;
+  if (exportDirExists) {
+    const traktorPending = state.tracks.filter((t) => t.paths.traktor !== null);
+    const traktorBar = makeProgressBar('Traktor', traktorPending.length);
+
+    for (const track of traktorPending) {
+      traktorBar.increment();
+      const traktorPath = track.paths.traktor ? path.resolve(track.paths.traktor) : null;
+      if (!traktorPath || !(await fileExists(traktorPath))) continue;
+
+      const tags = await readId3TempoAndKey(traktorPath);
+      let changedTrack = false;
+
+      if (tags.bpm !== null && track.parsed.bpm !== tags.bpm) {
+        track.parsed.bpm = tags.bpm;
+        track.parsed.bpmSource = 'traktor';
+        changedTrack = true;
+      }
+
+      if (tags.musicalKey !== null && track.parsed.musicalKey !== tags.musicalKey) {
+        track.parsed.musicalKey = tags.musicalKey;
+        track.parsed.keySource = 'traktor';
+        changedTrack = true;
+      }
+
+      if (changedTrack) {
+        track.updatedAt = nowIso();
+        traktorChanged += 1;
+        await writeLibraryState(state);
+      }
+    }
+    traktorBar.stop();
+  }
+  logOk(`Traktor tag backfill complete: ${traktorChanged}`);
 
   logStep('Backfilling BPM from related tracks...');
   const byId = new Map<string, LibraryTrack>();
@@ -1360,19 +2042,9 @@ async function stepAnalyze(state: LibraryState): Promise<void> {
   }
   bar.stop();
 
-  const createdAtMs = (id: string): number => {
-    const createdAt = state.tracks.find((t) => t.id === id)?.createdAt ?? null;
-    if (!createdAt) return Number.POSITIVE_INFINITY;
-    const ms = Date.parse(createdAt);
-    return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
-  };
+  const tracksById = new Map(state.tracks.map((t) => [t.id, t]));
   const sortIdsByCreatedAsc = (ids: string[]): string[] =>
-    [...ids].sort((a, b) => {
-      const ta = createdAtMs(a);
-      const tb = createdAtMs(b);
-      if (ta !== tb) return ta - tb;
-      return a.localeCompare(b);
-    });
+    sortTrackIdsByCreatedAt(ids, tracksById);
 
   const playlists: LibraryPlaylist[] = [];
   const allTrackIds = sortIdsByCreatedAsc(state.tracks.map((t) => t.id));
@@ -1406,6 +2078,38 @@ async function stepAnalyze(state: LibraryState): Promise<void> {
     });
   }
 
+  const djSets = generateDjSetPlaylists(state.tracks);
+  for (const set of djSets) {
+    playlists.push({
+      id: slugify(`dj-sets-${set.name}`),
+      name: `DJ Sets - ${set.name}`,
+      groupKey: 'DJ Sets',
+      groupValue: set.name,
+      trackIds: set.trackIds,
+      trackCount: set.trackIds.length,
+      availableTrackCount: set.trackIds.filter((id) => state.tracks.find((t) => t.id === id)?.availability.mp3).length,
+      path: null,
+      exportPath: null,
+      updatedAt: nowIso(),
+    });
+  }
+
+  const staticSets = await loadStaticPlaylists(state.tracks);
+  for (const set of staticSets) {
+    playlists.push({
+      id: slugify(`dj-sets-${set.name}`),
+      name: `DJ Sets - ${set.name}`,
+      groupKey: 'DJ Sets',
+      groupValue: set.name,
+      trackIds: set.trackIds,
+      trackCount: set.trackIds.length,
+      availableTrackCount: set.trackIds.filter((id) => state.tracks.find((t) => t.id === id)?.availability.mp3).length,
+      path: null,
+      exportPath: null,
+      updatedAt: nowIso(),
+    });
+  }
+
   state.playlists = playlists;
   state.steps.analyze = nowIso();
   await writeLibraryState(state);
@@ -1415,11 +2119,12 @@ async function stepAnalyze(state: LibraryState): Promise<void> {
 async function stepExport(state: LibraryState): Promise<void> {
   logStep('Exporting Traktor library...');
 
-  await fs.rm(TRAKTOR_DIR, { recursive: true, force: true });
-  await ensureDir(TRAKTOR_TRACKS_DIR);
-  await ensureDir(TRAKTOR_PLAYLISTS_DIR);
+  // Keep existing exported tracks intact so Traktor-written tags remain in place.
+  await fs.rm(getExportPlaylistsDir(), { recursive: true, force: true });
+  await ensureDir(getExportTracksDir());
+  await ensureDir(getExportPlaylistsDir());
 
-  const exportNameUsed = new Set<string>();
+  const expectedTraktorTargets = computeExpectedTraktorTrackPaths(state.tracks);
   const idToExportRel = new Map<string, string>();
 
   const trackBar = makeProgressBar('Export trk', state.tracks.length);
@@ -1435,23 +2140,18 @@ async function stepExport(state: LibraryState): Promise<void> {
     if (!(await fileExists(track.paths.mp3))) continue;
 
     const sourceMp3Abs = path.resolve(track.paths.mp3);
-    const title = toTitleCase(track.parsed.title ?? track.title ?? track.id);
-
-    let exportName = safeFileName(`TOKUDU - ${title}.mp3`);
-    if (exportNameUsed.has(exportName)) {
-      exportName = safeFileName(`TOKUDU - ${title} [${track.id.slice(0, 8)}].mp3`);
+    const targetAbs = expectedTraktorTargets.get(track.id);
+    if (!targetAbs) continue;
+    if (!(await fileExists(targetAbs))) {
+      await copyFileFresh(sourceMp3Abs, targetAbs);
     }
-    exportNameUsed.add(exportName);
-
-    const targetAbs = path.join(TRAKTOR_TRACKS_DIR, exportName);
-    await copyFileFresh(sourceMp3Abs, targetAbs);
 
     const rel = path.relative(process.cwd(), targetAbs);
     track.paths.traktor = rel;
     track.availability.exported = true;
     track.checkpoints.exportedAt = nowIso();
     track.updatedAt = nowIso();
-    idToExportRel.set(track.id, path.relative(TRAKTOR_PLAYLISTS_DIR, targetAbs));
+    idToExportRel.set(track.id, path.relative(getExportPlaylistsDir(), targetAbs));
     exportedTrackCount += 1;
   }
   trackBar.stop();
@@ -1470,7 +2170,7 @@ async function stepExport(state: LibraryState): Promise<void> {
     }
 
     const fileName = `${playlist.name}.m3u8`;
-    const abs = path.join(TRAKTOR_PLAYLISTS_DIR, fileName);
+    const abs = path.join(getExportPlaylistsDir(), fileName);
     await fs.writeFile(abs, `${lines.join('\n')}\n`, 'utf8');
     playlist.exportPath = path.relative(process.cwd(), abs);
     playlist.path = playlist.exportPath;
@@ -1480,8 +2180,14 @@ async function stepExport(state: LibraryState): Promise<void> {
 
   await fs.rm(LIBRARY_ZIP, { force: true });
   try {
-    await execFileAsync('zip', ['-r', path.basename(LIBRARY_ZIP), 'traktor', 'library.json', 'library.html'], {
-      cwd: BUILD_DIR,
+    const zipItems = ['library.json', 'library.html'];
+    const traktorRelative = path.relative(DATA_DIR, getExportDir());
+    // Include traktor dir in zip only if it's inside the build directory
+    if (!traktorRelative.startsWith('..') && !path.isAbsolute(traktorRelative)) {
+      zipItems.unshift(traktorRelative);
+    }
+    await execFileAsync('zip', ['-r', path.basename(LIBRARY_ZIP), ...zipItems], {
+      cwd: DATA_DIR,
       timeout: 5 * 60 * 1000,
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -1512,6 +2218,7 @@ async function stepReport(state: LibraryState): Promise<void> {
     main { padding:20px; overflow:auto; }
     table { width:100%; border-collapse: collapse; background:white; border:1px solid #e5e7eb; }
     th, td { padding:8px 10px; border-bottom:1px solid #e5e7eb; font-size:12px; text-align:left; white-space:nowrap; }
+    .num-right { text-align:right; }
     th.sortable { cursor:pointer; user-select:none; }
     .sort-label { display:inline-flex; align-items:center; gap:6px; }
     .sort-chevron { font-size:13px; color:#9ca3af; line-height:1; }
@@ -1577,6 +2284,7 @@ async function stepReport(state: LibraryState): Promise<void> {
       <table>
         <thead>
           <tr>
+            <th class="sortable num-right" data-sort="position"><span class="sort-label">Position <span class="sort-chevron"></span></span></th>
             <th class="sortable" data-sort="player"><span class="sort-label">Player <span class="sort-chevron"></span></span></th>
             <th class="sortable" data-sort="title"><span class="sort-label">Title <span class="sort-chevron"></span></span></th>
             <th class="sortable" data-sort="length"><span class="sort-label">Length <span class="sort-chevron"></span></span></th>
@@ -1607,8 +2315,9 @@ async function stepReport(state: LibraryState): Promise<void> {
 
     let selectedPlaylistId = 'collection-all-tracks';
     let currentTrackId = null;
-    let sortKey = 'created';
-    let sortDir = 'desc';
+    let sortKey = 'position';
+    let sortDir = 'asc';
+    let currentPositionMap = new Map();
 
     function getAudioSrc(t) {
       const mp3Path = t?.paths?.mp3;
@@ -1695,6 +2404,7 @@ async function stepReport(state: LibraryState): Promise<void> {
 
     function getSortValue(t, key) {
       switch (key) {
+        case 'position': return currentPositionMap.get(t?.id) ?? Number.MAX_SAFE_INTEGER;
         case 'player': return t?.availability?.mp3 ? 1 : 0;
         case 'title': return normalizeSortText(t?.parsed?.title || t?.title || t?.id || '');
         case 'length': return Number.isFinite(t?.duration) ? Number(t.duration) : -1;
@@ -1737,7 +2447,7 @@ async function stepReport(state: LibraryState): Promise<void> {
 
     function renderPlaylists() {
       playlistList.innerHTML = '';
-      const groupOrder = ['Collection', 'Genre', 'BPM', 'Energy', 'Key', 'Mood', 'Theme', 'Property', 'Other'];
+      const groupOrder = ['Collection', 'DJ Sets', 'Genre', 'BPM', 'Energy', 'Key', 'Mood', 'Theme', 'Property', 'Other'];
       const groupRank = (groupKey) => {
         const idx = groupOrder.indexOf(groupKey);
         return idx >= 0 ? idx : 999;
@@ -1805,6 +2515,7 @@ async function stepReport(state: LibraryState): Promise<void> {
       const selected = playlists.find(p => p.id === selectedPlaylistId) || playlists[0];
       const idSet = new Set((selected?.trackIds || []));
       const hidePrivate = hidePrivateToggle.checked;
+      currentPositionMap = new Map((selected?.trackIds || []).map((id, idx) => [id, idx + 1]));
 
       tbody.innerHTML = '';
       const visibleTracks = [];
@@ -1828,6 +2539,9 @@ async function stepReport(state: LibraryState): Promise<void> {
         const tr = document.createElement('tr');
         const isPublished = t.parsed?.isPublic === true;
         if (!isPublished) tr.className = 'row-private';
+        const positionTd = document.createElement('td');
+        positionTd.className = 'num-right mono';
+        positionTd.textContent = String(currentPositionMap.get(t.id) ?? '');
         const playerTd = document.createElement('td');
         const playButton = document.createElement('button');
         playButton.className = 'play-btn';
@@ -1905,6 +2619,7 @@ async function stepReport(state: LibraryState): Promise<void> {
         const createdTd = document.createElement('td');
         createdTd.textContent = formatCreatedDate(t.createdAt);
 
+        tr.appendChild(positionTd);
         tr.appendChild(playerTd);
         tr.appendChild(titleTd);
         tr.appendChild(lengthTd);
@@ -1952,8 +2667,8 @@ export async function runPipeline(opts: CliOptions): Promise<void> {
 
   logStep('Starting pipeline...');
   logInfo(`Input: ${path.resolve(DATA_DIR)}`);
-  logInfo(`Output: ${path.resolve(BUILD_DIR)}`);
-  logInfo(`Clean mode: ${opts.clean ? 'on' : 'off'}`);
+  logInfo(`Output: ${path.resolve(DATA_DIR)}`);
+  logInfo(`Export mode: ${opts.exportType ?? 'off'}`);
 
   if (!(await fileExists(DATA_DIR))) {
     throw new Error(`Input directory not found: ${path.resolve(DATA_DIR)}`);
@@ -1962,13 +2677,7 @@ export async function runPipeline(opts: CliOptions): Promise<void> {
     throw new Error(`CSV not found: ${path.resolve(path.join(DATA_DIR, CSV_FILE))}`);
   }
 
-  if (opts.clean) {
-    logStep('Cleaning build directory...');
-    await fs.rm(BUILD_DIR, { recursive: true, force: true });
-    logOk('Clean complete (data directory untouched)');
-  }
-
-  await ensureDir(BUILD_DIR);
+  await ensureDir(DATA_DIR);
 
   const existing = await readLibraryStateIfExists();
   const state: LibraryState = existing ?? {
@@ -1978,20 +2687,31 @@ export async function runPipeline(opts: CliOptions): Promise<void> {
     tracks: [],
     playlists: [],
   };
+  // Always refresh library.json as a pipeline checkpoint, even when it already exists.
+  await writeLibraryState(state);
 
   await stepImport(state, existing);
   await stepProcess(state);
   await stepAnalyze(state);
   await stepReport(state);
-  await stepExport(state);
+  if (opts.exportType === 'music' || opts.exportType === 'traktor') {
+    await stepExport(state);
+    if (opts.exportType === 'traktor') {
+      await stepTraktorUpsert(state);
+    }
+  } else {
+    logInfo('Export skipped (pass --export music|traktor to enable)');
+  }
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(2);
   console.log(chalk.bold.green('\nPipeline Complete'));
   console.log(`${chalk.blue('Elapsed:')} ${elapsed}s`);
   console.log(`${chalk.blue('Library JSON:')} ${path.resolve(LIBRARY_JSON)}`);
-  console.log(`${chalk.blue('Traktor export:')} ${path.resolve(TRAKTOR_DIR)}`);
   console.log(`${chalk.blue('HTML report:')} ${path.resolve(REPORT_HTML)}`);
-  console.log(`${chalk.blue('Zip bundle:')} ${path.resolve(LIBRARY_ZIP)}`);
+  if (opts.exportType === 'music' || opts.exportType === 'traktor') {
+    console.log(`${chalk.blue('Traktor export:')} ${path.resolve(getExportDir())}`);
+    console.log(`${chalk.blue('Zip bundle:')} ${path.resolve(LIBRARY_ZIP)}`);
+  }
 }
 
 export const __test__ = {
@@ -2006,6 +2726,10 @@ export const __test__ = {
   normalizeTitle,
   baseTitle,
   modeNumber,
+  openKeyToMusicalKey,
+  readId3TempoAndKey,
+  createdAtSortValue,
+  sortTrackIdsByCreatedAt,
 };
 
 const isMainModule =

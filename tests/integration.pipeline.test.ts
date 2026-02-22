@@ -50,14 +50,24 @@ describe.sequential('integration pipeline', () => {
     const presentRows = parsed.filter((row) => copiedIds.has((row.ID || '').toLowerCase()));
     const missingRows = parsed.filter((row) => !copiedIds.has((row.ID || '').toLowerCase())).slice(0, 3);
     const subset = [...presentRows.slice(0, 10), ...missingRows];
+    const curatedEntries = presentRows.slice(0, 2).map((row) => ({
+      id: (row.ID || '').toLowerCase(),
+      name: row.Title || '',
+    }));
 
     await fs.writeFile(path.join(fixtureDir, 'tracks-list.csv'), toCsv(subset, headers), 'utf8');
+    await fs.writeFile(path.join(fixtureDir, 'da-final-drop.json'), `${JSON.stringify(curatedEntries, null, 2)}\n`, 'utf8');
 
     previousCwd = process.cwd();
     process.chdir(testsRoot);
-    await runPipeline({ clean: true });
+    process.env.EXPORT_DIR = path.join(testsRoot, 'data', 'traktor');
+    await fs.rm(path.join(testsRoot, 'data', 'library.json'), { force: true });
+    await fs.rm(path.join(testsRoot, 'data', 'library.html'), { force: true });
+    await fs.rm(path.join(testsRoot, 'data', 'library.zip'), { force: true });
+    await fs.rm(path.join(testsRoot, 'data', 'missing-tracks.txt'), { force: true });
+    await runPipeline({ exportType: 'music' });
 
-    const libRaw = await fs.readFile(path.join(testsRoot, 'build', 'library.json'), 'utf8');
+    const libRaw = await fs.readFile(path.join(testsRoot, 'data', 'library.json'), 'utf8');
     library = JSON.parse(libRaw);
   }, 15 * 60 * 1000);
 
@@ -104,10 +114,10 @@ describe.sequential('integration pipeline', () => {
   });
 
   it('creates traktor export folders, copied tracks, playlists, html report, and zip bundle', async () => {
-    const traktorTracks = path.join(testsRoot, 'build', 'traktor', 'Tracks');
-    const traktorPlaylists = path.join(testsRoot, 'build', 'traktor', 'Playlists');
-    const report = path.join(testsRoot, 'build', 'library.html');
-    const zipBundle = path.join(testsRoot, 'build', 'library.zip');
+    const traktorTracks = path.join(testsRoot, 'data', 'traktor', 'Tracks');
+    const traktorPlaylists = path.join(testsRoot, 'data', 'traktor', 'Playlists');
+    const report = path.join(testsRoot, 'data', 'library.html');
+    const zipBundle = path.join(testsRoot, 'data', 'library.zip');
 
     const trackFiles = await fs.readdir(traktorTracks);
     const playlistFiles = await fs.readdir(traktorPlaylists);
@@ -128,9 +138,93 @@ describe.sequential('integration pipeline', () => {
     expect(zipStat.size).toBeGreaterThan(0);
   });
 
+  it('does not overwrite existing exported mp3 files on subsequent exports', async () => {
+    const traktorTracks = path.join(testsRoot, 'data', 'traktor', 'Tracks');
+    const trackFiles = (await fs.readdir(traktorTracks)).filter((f) => f.endsWith('.mp3'));
+    expect(trackFiles.length).toBeGreaterThan(0);
+
+    const firstTrack = path.join(traktorTracks, trackFiles[0]);
+    const originalBytes = await fs.readFile(firstTrack);
+    await fs.writeFile(firstTrack, Buffer.from('LOCKED_EXPORT_TEST_CONTENT'));
+    const lockedStat = await fs.stat(firstTrack);
+
+    await runPipeline({ exportType: 'music' });
+
+    const afterBytes = await fs.readFile(firstTrack);
+    const afterStat = await fs.stat(firstTrack);
+    expect(afterBytes.toString('utf8')).toBe('LOCKED_EXPORT_TEST_CONTENT');
+    expect(afterStat.mtimeMs).toBe(lockedStat.mtimeMs);
+
+    await fs.writeFile(firstTrack, originalBytes);
+  }, 15 * 60 * 1000);
+
   it('writes missing-tracks.txt with expected header', async () => {
-    const missing = path.join(testsRoot, 'build', 'missing-tracks.txt');
+    const missing = path.join(testsRoot, 'data', 'missing-tracks.txt');
     const content = await fs.readFile(missing, 'utf8');
     expect(content.startsWith('trackId,mp3Found,wavFound,txtFound')).toBe(true);
   });
+
+  it('includes curated playlist loaded from data/da-final-drop.json', () => {
+    const curated = library.playlists.find((p) => p.name === 'DJ Sets - Da Final Drop');
+    expect(curated).toBeTruthy();
+    expect(Array.isArray(curated?.trackIds)).toBe(true);
+    expect((curated?.trackIds || []).length).toBeGreaterThan(0);
+  });
+
+  it('prefers Traktor tags over existing bpm/key values and rewrites library.json on rerun', async () => {
+    const traktorTracks = path.join(testsRoot, 'data', 'traktor', 'Tracks');
+    const trackFiles = (await fs.readdir(traktorTracks)).filter((f) => f.endsWith('.mp3'));
+    expect(trackFiles.length).toBeGreaterThan(0);
+
+    const firstTrack = trackFiles[0];
+    const firstTrackAbs = path.join(traktorTracks, firstTrack);
+
+    const synchsafe = (size: number): Buffer => Buffer.from([
+      (size >> 21) & 0x7f,
+      (size >> 14) & 0x7f,
+      (size >> 7) & 0x7f,
+      size & 0x7f,
+    ]);
+    const textFrame = (id: string, value: string): Buffer => {
+      const text = Buffer.from(value, 'utf8');
+      const body = Buffer.concat([Buffer.from([0x03]), text]);
+      const frameHeader = Buffer.alloc(10);
+      frameHeader.write(id, 0, 4, 'ascii');
+      frameHeader.writeUInt32BE(body.length, 4);
+      return Buffer.concat([frameHeader, body]);
+    };
+
+    const body = Buffer.concat([textFrame('TBPM', '133'), textFrame('TKEY', '4m')]);
+    const id3Header = Buffer.alloc(10);
+    id3Header.write('ID3', 0, 3, 'ascii');
+    id3Header[3] = 3;
+    id3Header[4] = 0;
+    id3Header[5] = 0;
+    synchsafe(body.length).copy(id3Header, 6);
+    await fs.writeFile(firstTrackAbs, Buffer.concat([id3Header, body, Buffer.from([0xff, 0xfb, 0x90, 0x64])]));
+
+    const libPath = path.join(testsRoot, 'data', 'library.json');
+    const beforeRaw = await fs.readFile(libPath, 'utf8');
+    const beforeLib = JSON.parse(beforeRaw) as { tracks: Array<Record<string, unknown>> };
+    beforeLib.tracks = beforeLib.tracks.map((t) => ({ ...t, traktorPath: null }));
+    await fs.writeFile(libPath, `${JSON.stringify(beforeLib, null, 2)}\n`, 'utf8');
+
+    const beforeStat = await fs.stat(libPath);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await runPipeline({ exportType: 'music' });
+
+    const afterStat = await fs.stat(libPath);
+    expect(afterStat.mtimeMs).toBeGreaterThan(beforeStat.mtimeMs);
+
+    const libRaw = await fs.readFile(libPath, 'utf8');
+    const updated = JSON.parse(libRaw) as { tracks: Array<Record<string, unknown>> };
+    const rel = path.relative(testsRoot, firstTrackAbs);
+    const taggedTrack = updated.tracks.find((t) => t.traktorPath === rel);
+    expect(taggedTrack).toBeTruthy();
+    expect(taggedTrack?.bpm).toBe(133);
+    expect(taggedTrack?.bpmSource).toBe('traktor');
+    expect(taggedTrack?.musicalKey).toBe('F# Minor');
+    expect(taggedTrack?.keySource).toBe('traktor');
+  }, 15 * 60 * 1000);
 });

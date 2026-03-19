@@ -8,20 +8,20 @@ import { parse } from 'csv-parse/sync';
 import chalk from 'chalk';
 import cliProgress from 'cli-progress';
 import traktor from 'node-traktor';
+import sharp from 'sharp';
 
 const execFileAsync = promisify(execFile);
+const THUMB_SIZE = 96;
 const RAW_API_MARKER = '--- Raw API Response ---';
 
 // Pipeline constants (no positional args)
 const DATA_DIR = 'data';
 const CSV_FILE = 'tracks-list.csv';
 const LIBRARY_JSON = path.join(DATA_DIR, 'library.json');
-const LIBRARY_ZIP = path.join(DATA_DIR, 'library.zip');
 const DEFAULT_EXPORT_DIR = '/Users/anton/Music/Suno';
 function getExportDir(): string { return process.env.EXPORT_DIR ?? DEFAULT_EXPORT_DIR; }
 function getExportTracksDir(): string { return path.join(getExportDir(), 'Tracks'); }
 function getExportPlaylistsDir(): string { return path.join(getExportDir(), 'Playlists'); }
-const REPORT_HTML = path.join(DATA_DIR, 'library.html');
 
 function logStep(message: string): void {
   console.log(chalk.bold.cyan(message));
@@ -69,12 +69,18 @@ type LibraryTrack = {
     wav: string | null;
     txt: string | null;
     mp3: string | null;
+    image: string | null;
+    thumb: string | null;
+    video: string | null;
     traktor: string | null;
   };
   availability: {
     wav: boolean;
     txt: boolean;
     mp3: boolean;
+    image: boolean;
+    thumb: boolean;
+    video: boolean;
     exported: boolean;
   };
   checkpoints: {
@@ -129,7 +135,6 @@ type LibraryState = {
     process: string;
     analyze: string;
     export: string;
-    report: string;
   };
   tracks: LibraryTrack[];
   playlists: LibraryPlaylist[];
@@ -150,8 +155,9 @@ type TrackContext = {
   musicalKey: string | null;
 };
 
-type CliOptions = {
+export type CliOptions = {
   exportType: 'music' | 'traktor' | null;
+  thumbnailsOnly?: boolean;
 };
 
 function nowIso(): string {
@@ -405,6 +411,32 @@ async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
 }
 
+async function downloadFile(url: string, destPath: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    await fs.writeFile(destPath, buffer);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureThumb(imagePath: string): Promise<string | null> {
+  const thumbPath = imagePath.replace(/\.(jpe?g|png|webp)$/i, '.thumb.webp');
+  if (await fileExists(thumbPath)) return thumbPath;
+  try {
+    await sharp(path.resolve(imagePath))
+      .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover' })
+      .webp({ quality: 75 })
+      .toFile(path.resolve(thumbPath));
+    return thumbPath;
+  } catch {
+    return null;
+  }
+}
+
 async function readLibraryStateIfExists(): Promise<LibraryState | null> {
   if (!(await fileExists(LIBRARY_JSON))) return null;
   try {
@@ -434,12 +466,18 @@ async function readLibraryStateIfExists(): Promise<LibraryState | null> {
           wav: (track['wavPath'] as string | null | undefined) ?? null,
           txt: (track['txtPath'] as string | null | undefined) ?? null,
           mp3: (track['mp3Path'] as string | null | undefined) ?? null,
+          image: (track['imagePath'] as string | null | undefined) ?? null,
+          thumb: (track['thumbPath'] as string | null | undefined) ?? null,
+          video: (track['videoPath'] as string | null | undefined) ?? null,
           traktor: (track['traktorPath'] as string | null | undefined) ?? null,
         },
         availability: {
           wav: Boolean(track['hasWav']),
           txt: Boolean(track['hasTxt']),
           mp3: Boolean(track['hasMp3']),
+          image: Boolean(track['hasImage']),
+          thumb: Boolean(track['hasThumb']),
+          video: Boolean(track['hasVideo']),
           exported: Boolean(track['isExported']),
         },
         checkpoints: {
@@ -512,11 +550,17 @@ async function writeLibraryState(state: LibraryState): Promise<void> {
     wavPath: track.paths.wav,
     txtPath: track.paths.txt,
     mp3Path: track.paths.mp3,
+    imagePath: track.paths.image,
+    thumbPath: track.paths.thumb,
+    videoPath: track.paths.video,
     path: track.paths.mp3,
     traktorPath: track.paths.traktor,
     hasWav: track.availability.wav,
     hasTxt: track.availability.txt,
     hasMp3: track.availability.mp3,
+    hasImage: track.availability.image,
+    hasThumb: track.availability.thumb,
+    hasVideo: track.availability.video,
     isExported: track.availability.exported,
     importedAt: track.checkpoints.importedAt,
     processedAt: track.checkpoints.processedAt,
@@ -1606,12 +1650,18 @@ async function stepImport(state: LibraryState, existing: LibraryState | null): P
         wav,
         txt,
         mp3,
+        image: prev?.paths.image ?? null,
+        thumb: prev?.paths.thumb ?? null,
+        video: prev?.paths.video ?? null,
         traktor: prev?.paths.traktor ?? null,
       },
       availability: {
         wav: Boolean(wav),
         txt: Boolean(txt),
         mp3: Boolean(mp3),
+        image: prev?.availability.image ?? false,
+        thumb: prev?.availability.thumb ?? false,
+        video: prev?.availability.video ?? false,
         exported: prev?.availability.exported ?? false,
       },
       checkpoints: {
@@ -1673,6 +1723,8 @@ async function stepProcess(state: LibraryState): Promise<void> {
   const bar = makeProgressBar('Process', state.tracks.length);
   let savedCount = 0;
   let mp3Generated = 0;
+  let imagesDownloaded = 0;
+  let videosDownloaded = 0;
 
   for (const track of state.tracks) {
     bar.increment();
@@ -1753,6 +1805,49 @@ async function stepProcess(state: LibraryState): Promise<void> {
       track.parsed.bpmSource = 'none';
     }
 
+    // Download image if not already present
+    if (!track.availability.image && track.metadata && track.paths.wav) {
+      const imageUrl = (track.metadata['image_large_url'] || track.metadata['image_url']) as string | undefined;
+      if (imageUrl) {
+        const ext = imageUrl.match(/\.(jpe?g|png|webp)$/i)?.[0] ?? '.jpeg';
+        const imagePath = track.paths.wav.replace(/\.wav$/i, ext);
+        if (await fileExists(imagePath)) {
+          track.paths.image = imagePath;
+          track.availability.image = true;
+        } else if (await downloadFile(imageUrl, imagePath)) {
+          track.paths.image = imagePath;
+          track.availability.image = true;
+          imagesDownloaded += 1;
+        }
+      }
+    }
+
+    // Generate thumbnail if image exists but thumb doesn't
+    if (track.availability.image && track.paths.image && !track.availability.thumb) {
+      const thumbPath = await ensureThumb(track.paths.image);
+      if (thumbPath) {
+        track.paths.thumb = thumbPath;
+        track.availability.thumb = true;
+      }
+    }
+
+    // Download video if not already present
+    if (!track.availability.video && track.metadata && track.paths.wav) {
+      const videoUrl = track.metadata['video_url'] as string | undefined;
+      if (videoUrl) {
+        const ext = videoUrl.match(/\.(mp4|webm)$/i)?.[0] ?? '.mp4';
+        const videoPath = track.paths.wav.replace(/\.wav$/i, ext);
+        if (await fileExists(videoPath)) {
+          track.paths.video = videoPath;
+          track.availability.video = true;
+        } else if (await downloadFile(videoUrl, videoPath)) {
+          track.paths.video = videoPath;
+          track.availability.video = true;
+          videosDownloaded += 1;
+        }
+      }
+    }
+
     track.checkpoints.processedAt = nowIso();
     track.updatedAt = nowIso();
 
@@ -1771,7 +1866,7 @@ async function stepProcess(state: LibraryState): Promise<void> {
     }
   }
   bar.stop();
-  logOk(`Per-track processing complete: checkpoints saved=${savedCount}, mp3 generated=${mp3Generated}`);
+  logOk(`Per-track processing complete: checkpoints saved=${savedCount}, mp3 generated=${mp3Generated}, images downloaded=${imagesDownloaded}, videos downloaded=${videosDownloaded}`);
 
   const expectedTraktorTargets = computeExpectedTraktorTrackPaths(state.tracks);
   for (const track of state.tracks) {
@@ -2178,489 +2273,12 @@ async function stepExport(state: LibraryState): Promise<void> {
   }
   playlistBar.stop();
 
-  await fs.rm(LIBRARY_ZIP, { force: true });
-  try {
-    const zipItems = ['library.json', 'library.html'];
-    const traktorRelative = path.relative(DATA_DIR, getExportDir());
-    // Include traktor dir in zip only if it's inside the build directory
-    if (!traktorRelative.startsWith('..') && !path.isAbsolute(traktorRelative)) {
-      zipItems.unshift(traktorRelative);
-    }
-    await execFileAsync('zip', ['-r', path.basename(LIBRARY_ZIP), ...zipItems], {
-      cwd: DATA_DIR,
-      timeout: 5 * 60 * 1000,
-      maxBuffer: 10 * 1024 * 1024,
-    });
-  } catch (error) {
-    throw new Error(`Failed to create ${LIBRARY_ZIP}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
   state.steps.export = nowIso();
   await writeLibraryState(state);
-  logOk(`Export complete: tracks=${exportedTrackCount}, playlists=${state.playlists.length}, zip=${path.resolve(LIBRARY_ZIP)}`);
+  logOk(`Export complete: tracks=${exportedTrackCount}, playlists=${state.playlists.length}`);
 }
 
-async function stepReport(state: LibraryState): Promise<void> {
-  logStep('Generating HTML report...');
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TOKUDU Library Report</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css" />
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js"></script>
-  <style>
-    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:#f5f7fb; color:#111827; }
-    .layout { display:grid; grid-template-columns: 320px 1fr; min-height:100vh; }
-    aside { background:#111827; color:#f9fafb; padding:16px; overflow:auto; }
-    main { padding:20px; overflow:auto; }
-    table { width:100%; border-collapse: collapse; background:white; border:1px solid #e5e7eb; }
-    th, td { padding:8px 10px; border-bottom:1px solid #e5e7eb; font-size:12px; text-align:left; white-space:nowrap; }
-    .num-right { text-align:right; }
-    th.sortable { cursor:pointer; user-select:none; }
-    .sort-label { display:inline-flex; align-items:center; gap:6px; }
-    .sort-chevron { font-size:13px; color:#9ca3af; line-height:1; }
-    th.sort-active .sort-chevron { color:#2563eb; }
-    tr:hover { background:#f9fafb; }
-    pre { white-space: pre-wrap; background:#0f172a; color:#e2e8f0; padding:10px; border-radius:8px; font-size:11px; }
-    .playlist-item { margin: 4px 0; padding: 6px 8px; border-radius: 8px; cursor: pointer; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    .playlist-item:hover { background: #1f2937; }
-    .playlist-item.active { background: #2563eb; color: white; }
-    .playlist-group { margin-top: 18px; margin-bottom: 8px; font-size: 10px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: #9ca3af; }
-    .playlist-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .playlist-count { min-width: 28px; text-align:center; font-size:11px; padding:1px 8px; border-radius:999px; background: rgba(255,255,255,0.16); color: #f9fafb; }
-    .playlist-item.active .playlist-count { background: rgba(255,255,255,0.28); }
-    .toolbar { display:flex; align-items:center; gap:12px; margin: 8px 0 16px; }
-    .badge-wrap { display:flex; flex-wrap:wrap; gap:6px; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid rgba(0,0,0,0.08); }
-    .play-btn {
-      width: 28px;
-      height: 28px;
-      border: 1px solid #d1d5db;
-      background: #fff;
-      color: #111827;
-      border-radius: 999px;
-      padding: 0;
-      font-size: 13px;
-      line-height: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-    .play-btn:hover { background:#f3f4f6; }
-    .play-btn:disabled { cursor:not-allowed; color:#9ca3af; background:#f9fafb; }
-    .track-title { font-size:14px; font-weight:700; }
-    .cell-wrap { white-space: normal; overflow-wrap: anywhere; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-variant-numeric: tabular-nums; }
-    .key-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid rgba(0,0,0,0.12); font-weight:600; }
-    tr.row-private { opacity: 0.9; }
-    .pub-badge { display:inline-block; font-size:10px; font-weight:700; letter-spacing:0.04em; border-radius:999px; padding:2px 8px; border:1px solid transparent; }
-    .pub-public { background:#dcfce7; color:#166534; border-color:#86efac; }
-    .pub-private { background:#f3f4f6; color:#6b7280; border-color:#d1d5db; }
-  </style>
-</head>
-<body>
-  <div class="layout">
-    <aside>
-      <h2 style="margin-top:0">Playlists</h2>
-      <div id="playlistList"></div>
-    </aside>
-    <main>
-      <div class="toolbar" style="justify-content:space-between; margin-bottom:6px;">
-        <h3 style="margin:0;">Tracks</h3>
-        <div style="display:flex; align-items:center; gap:14px;">
-          <label style="display:flex; align-items:center; gap:8px; font-size:13px; white-space:nowrap;">
-            <input type="checkbox" id="hidePrivateToggle" />
-            Hide private tracks
-          </label>
-        </div>
-      </div>
-      <div class="toolbar" style="margin-top:0;">
-        <div id="activeFilter" style="font-size:13px; color:#6b7280;"></div>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th class="sortable num-right" data-sort="position"><span class="sort-label">Position <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="player"><span class="sort-label">Player <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="title"><span class="sort-label">Title <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="length"><span class="sort-label">Length <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="bpm"><span class="sort-label">BPM <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="key"><span class="sort-label">Key <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="tags"><span class="sort-label">Tags <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="created"><span class="sort-label">Created <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="published"><span class="sort-label">Published <span class="sort-chevron"></span></span></th>
-            <th class="sortable" data-sort="plays"><span class="sort-label">Plays <span class="sort-chevron"></span></span></th>
-          </tr>
-        </thead>
-        <tbody id="trackRows"></tbody>
-      </table>
-    </main>
-  </div>
-  <script>
-    const data = ${JSON.stringify({ tracks: state.tracks, playlists: state.playlists })};
-
-    const tracks = data.tracks || [];
-    const playlists = data.playlists || [];
-
-    const playlistList = document.getElementById('playlistList');
-    const tbody = document.getElementById('trackRows');
-    const hidePrivateToggle = document.getElementById('hidePrivateToggle');
-    const activeFilter = document.getElementById('activeFilter');
-    const sortHeaders = Array.from(document.querySelectorAll('th.sortable'));
-    const player = new Audio();
-
-    let selectedPlaylistId = 'collection-all-tracks';
-    let currentTrackId = null;
-    let sortKey = 'position';
-    let sortDir = 'asc';
-    let currentPositionMap = new Map();
-
-    function getAudioSrc(t) {
-      const mp3Path = t?.paths?.mp3;
-      if (!mp3Path || !t?.availability?.mp3) return null;
-      const clean = String(mp3Path).replace(/^\\.\\//, '');
-      return '../' + clean;
-    }
-
-    function stopPlayback() {
-      player.pause();
-      player.currentTime = 0;
-      currentTrackId = null;
-      renderTracks();
-    }
-
-    function togglePlayback(t) {
-      const src = getAudioSrc(t);
-      if (!src) return;
-
-      if (currentTrackId === t.id) {
-        stopPlayback();
-        return;
-      }
-
-      player.pause();
-      player.currentTime = 0;
-      player.src = src;
-      currentTrackId = t.id;
-      player.play().catch(() => {
-        currentTrackId = null;
-      }).finally(() => {
-        renderTracks();
-      });
-      renderTracks();
-    }
-
-    player.addEventListener('ended', () => {
-      currentTrackId = null;
-      renderTracks();
-    });
-
-    function hashString(str) {
-      let h = 0;
-      for (let i = 0; i < str.length; i++) h = ((h << 5) - h) + str.charCodeAt(i);
-      return Math.abs(h);
-    }
-
-    function badgeColor(label) {
-      const hue = hashString(label) % 360;
-      return { bg: 'hsl(' + hue + ' 85% 92%)', fg: 'hsl(' + hue + ' 50% 28%)' };
-    }
-
-    function toOpenKey(musicalKey) {
-      if (!musicalKey) return null;
-      const match = String(musicalKey).trim().match(/^([A-G])([#b]?)[\\s_-]+(Major|Minor)$/i);
-      if (!match) return null;
-      const base = match[1].toUpperCase();
-      const accidental = match[2] || '';
-      const mode = match[3].toLowerCase() === 'major' ? 'major' : 'minor';
-      const note = base + accidental;
-      const majorMap = { C:'1d', G:'2d', D:'3d', A:'4d', E:'5d', B:'6d', 'F#':'7d', Gb:'7d', 'C#':'8d', Db:'8d', 'G#':'9d', Ab:'9d', 'D#':'10d', Eb:'10d', 'A#':'11d', Bb:'11d', F:'12d' };
-      const minorMap = { A:'1m', E:'2m', B:'3m', 'F#':'4m', Gb:'4m', 'C#':'5m', Db:'5m', 'G#':'6m', Ab:'6m', 'D#':'7m', Eb:'7m', 'A#':'8m', Bb:'8m', F:'9m', C:'10m', G:'11m', D:'12m' };
-      return mode === 'major' ? (majorMap[note] || null) : (minorMap[note] || null);
-    }
-
-    function formatDuration(seconds) {
-      if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '';
-      const rounded = Math.round(seconds);
-      const m = Math.floor(rounded / 60);
-      const s = String(rounded % 60).padStart(2, '0');
-      return m + ':' + s;
-    }
-
-    function formatCreatedDate(value) {
-      if (!value) return '';
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return '';
-      return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
-    }
-
-    function normalizeSortText(value) {
-      return String(value || '').toLowerCase();
-    }
-
-    function getSortValue(t, key) {
-      switch (key) {
-        case 'position': return currentPositionMap.get(t?.id) ?? Number.MAX_SAFE_INTEGER;
-        case 'player': return t?.availability?.mp3 ? 1 : 0;
-        case 'title': return normalizeSortText(t?.parsed?.title || t?.title || t?.id || '');
-        case 'length': return Number.isFinite(t?.duration) ? Number(t.duration) : -1;
-        case 'bpm': return typeof t?.parsed?.bpm === 'number' ? Math.round(t.parsed.bpm) : -1;
-        case 'key': return normalizeSortText(toOpenKey(t?.parsed?.musicalKey || null) || '');
-        case 'tags': {
-          const rawTags = t?.metadata?.metadata?.tags || t?.metadata?.tags || t?.parsed?.tags || '';
-          return normalizeSortText(rawTags);
-        }
-        case 'created': {
-          const ms = Date.parse(t?.createdAt || '');
-          return Number.isFinite(ms) ? ms : -1;
-        }
-        case 'published': return t?.parsed?.isPublic === true ? 1 : 0;
-        case 'plays': {
-          const n = Number(t?.metadata?.play_count);
-          return Number.isFinite(n) ? n : -1;
-        }
-        default: return '';
-      }
-    }
-
-    function compareValues(a, b) {
-      if (typeof a === 'number' && typeof b === 'number') return a - b;
-      return String(a).localeCompare(String(b));
-    }
-
-    function renderSortHeaders() {
-      for (const th of sortHeaders) {
-        const key = th.dataset.sort;
-        const chev = th.querySelector('.sort-chevron');
-        th.classList.remove('sort-active');
-        if (chev) chev.textContent = '';
-        if (key === sortKey) {
-          th.classList.add('sort-active');
-          if (chev) chev.textContent = sortDir === 'asc' ? '▴' : '▾';
-        }
-      }
-    }
-
-    function renderPlaylists() {
-      playlistList.innerHTML = '';
-      const groupOrder = ['Collection', 'DJ Sets', 'Genre', 'BPM', 'Energy', 'Key', 'Mood', 'Theme', 'Property', 'Other'];
-      const groupRank = (groupKey) => {
-        const idx = groupOrder.indexOf(groupKey);
-        return idx >= 0 ? idx : 999;
-      };
-
-      const grouped = new Map();
-      for (const p of playlists) {
-        const key = String(p.groupKey || 'Other');
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key).push(p);
-      }
-
-      const renderItem = (p) => {
-        const groupKey = String(p.groupKey || '');
-        const rawName = String(p.name || '');
-        const prefix = groupKey && groupKey !== 'Collection' ? (groupKey + ' - ') : '';
-        const displayName = prefix && rawName.startsWith(prefix) ? rawName.slice(prefix.length) : rawName;
-        const div = document.createElement('div');
-        div.className = 'playlist-item' + (p.id === selectedPlaylistId ? ' active' : '');
-        const name = document.createElement('span');
-        name.className = 'playlist-name';
-        name.textContent = displayName;
-        const count = document.createElement('span');
-        count.className = 'playlist-count';
-        count.textContent = String(p.trackCount);
-        div.appendChild(name);
-        div.appendChild(count);
-        div.onclick = () => {
-          selectedPlaylistId = p.id;
-          renderPlaylists();
-          renderTracks();
-        };
-        playlistList.appendChild(div);
-      };
-
-      const allTracks = playlists.find((p) => p.id === 'collection-all-tracks') || null;
-      if (allTracks) {
-        renderItem(allTracks);
-      }
-
-      const groups = [...grouped.keys()]
-        .filter((g) => g !== 'Collection')
-        .sort((a, b) => {
-          const ar = groupRank(a);
-          const br = groupRank(b);
-          if (ar !== br) return ar - br;
-          return a.localeCompare(b);
-        });
-
-      for (const group of groups) {
-        const header = document.createElement('div');
-        header.className = 'playlist-group';
-        header.textContent = String(group).toUpperCase();
-        playlistList.appendChild(header);
-
-        const items = grouped
-          .get(group)
-          .slice()
-          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        for (const p of items) renderItem(p);
-      }
-    }
-
-    function renderTracks() {
-      const selected = playlists.find(p => p.id === selectedPlaylistId) || playlists[0];
-      const idSet = new Set((selected?.trackIds || []));
-      const hidePrivate = hidePrivateToggle.checked;
-      currentPositionMap = new Map((selected?.trackIds || []).map((id, idx) => [id, idx + 1]));
-
-      tbody.innerHTML = '';
-      const visibleTracks = [];
-      for (const t of tracks) {
-        if (!idSet.has(t.id)) continue;
-        const isPublished = t.parsed?.isPublic === true;
-        if (hidePrivate && !isPublished) continue;
-        visibleTracks.push(t);
-      }
-
-      visibleTracks.sort((a, b) => {
-        const cmp = compareValues(getSortValue(a, sortKey), getSortValue(b, sortKey));
-        if (cmp !== 0) return sortDir === 'asc' ? cmp : -cmp;
-        return String(a.id || '').localeCompare(String(b.id || ''));
-      });
-
-      let shownCount = 0;
-      for (const t of visibleTracks) {
-        shownCount += 1;
-
-        const tr = document.createElement('tr');
-        const isPublished = t.parsed?.isPublic === true;
-        if (!isPublished) tr.className = 'row-private';
-        const positionTd = document.createElement('td');
-        positionTd.className = 'num-right mono';
-        positionTd.textContent = String(currentPositionMap.get(t.id) ?? '');
-        const playerTd = document.createElement('td');
-        const playButton = document.createElement('button');
-        playButton.className = 'play-btn';
-        playButton.type = 'button';
-        playButton.disabled = !Boolean(t.availability?.mp3);
-        const isCurrent = currentTrackId === t.id;
-        playButton.textContent = isCurrent ? '⏸' : '▶';
-        playButton.title = isCurrent ? 'Pause' : 'Play';
-        playButton.setAttribute('aria-label', isCurrent ? 'Pause' : 'Play');
-        playButton.onclick = () => togglePlayback(t);
-        playerTd.appendChild(playButton);
-
-        const rawTags = t?.metadata?.metadata?.tags || t?.metadata?.tags || t?.parsed?.tags || '';
-        const parts = String(rawTags)
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean)
-          .slice(0, 12);
-
-        const promptCell = document.createElement('td');
-        promptCell.className = 'cell-wrap';
-        const wrap = document.createElement('div');
-        wrap.className = 'badge-wrap';
-        if (parts.length === 0) {
-          wrap.textContent = '';
-        } else {
-          for (const part of parts) {
-            const b = document.createElement('span');
-            b.className = 'badge';
-            const c = badgeColor(part);
-            b.style.background = c.bg;
-            b.style.color = c.fg;
-            b.textContent = part;
-            wrap.appendChild(b);
-          }
-        }
-        promptCell.appendChild(wrap);
-
-        const titleTd = document.createElement('td');
-        titleTd.className = 'track-title cell-wrap';
-        titleTd.textContent = String(t.parsed?.title || t.title || t.id || '');
-
-        const lengthTd = document.createElement('td');
-        lengthTd.className = 'mono';
-        lengthTd.textContent = formatDuration(t.duration);
-
-        const publishedTd = document.createElement('td');
-        const pub = document.createElement('span');
-        pub.className = 'pub-badge ' + (isPublished ? 'pub-public' : 'pub-private');
-        pub.textContent = isPublished ? 'PUBLIC' : 'PRIVATE';
-        publishedTd.appendChild(pub);
-
-        const playCountTd = document.createElement('td');
-        const rawPlayCount = Number(t?.metadata?.play_count);
-        playCountTd.textContent = Number.isFinite(rawPlayCount) ? String(rawPlayCount) : '';
-
-        const bpmTd = document.createElement('td');
-        bpmTd.className = 'mono';
-        bpmTd.textContent = typeof t.parsed?.bpm === 'number' ? String(Math.round(t.parsed.bpm)) : '';
-
-        const keyTd = document.createElement('td');
-        const openKey = toOpenKey(t.parsed?.musicalKey || null);
-        if (openKey) {
-          const k = document.createElement('span');
-          k.className = 'key-badge mono';
-          const c = badgeColor('openkey:' + openKey);
-          k.style.background = c.bg;
-          k.style.color = c.fg;
-          k.textContent = openKey;
-          keyTd.appendChild(k);
-        } else {
-          keyTd.textContent = '';
-        }
-
-        const createdTd = document.createElement('td');
-        createdTd.textContent = formatCreatedDate(t.createdAt);
-
-        tr.appendChild(positionTd);
-        tr.appendChild(playerTd);
-        tr.appendChild(titleTd);
-        tr.appendChild(lengthTd);
-        tr.appendChild(bpmTd);
-        tr.appendChild(keyTd);
-        tr.appendChild(promptCell);
-        tr.appendChild(createdTd);
-        tr.appendChild(publishedTd);
-        tr.appendChild(playCountTd);
-        tbody.appendChild(tr);
-      }
-      activeFilter.textContent = 'Showing: ' + (selected?.name || 'Unknown') + ' (' + shownCount + ')';
-      renderSortHeaders();
-    }
-
-    for (const th of sortHeaders) {
-      th.addEventListener('click', () => {
-        const key = th.dataset.sort;
-        if (!key) return;
-        if (sortKey === key) {
-          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-        } else {
-          sortKey = key;
-          sortDir = key === 'created' ? 'desc' : 'asc';
-        }
-        renderTracks();
-      });
-    }
-
-    hidePrivateToggle.addEventListener('change', renderTracks);
-    renderPlaylists();
-    renderTracks();
-  </script>
-</body>
-</html>`;
-
-  await fs.writeFile(REPORT_HTML, html, 'utf8');
-  state.steps.report = nowIso();
-  await writeLibraryState(state);
-  logOk(`Report generated: ${REPORT_HTML}`);
-}
+// stepReport removed — the web UI at suno.tokudu.com replaces the static HTML report
 
 export async function runPipeline(opts: CliOptions): Promise<void> {
   const start = Date.now();
@@ -2683,17 +2301,41 @@ export async function runPipeline(opts: CliOptions): Promise<void> {
   const state: LibraryState = existing ?? {
     version: 2,
     updatedAt: nowIso(),
-    steps: { import: '', process: '', analyze: '', export: '', report: '' },
+    steps: { import: '', process: '', analyze: '', export: '' },
     tracks: [],
     playlists: [],
   };
   // Always refresh library.json as a pipeline checkpoint, even when it already exists.
   await writeLibraryState(state);
 
+  if (opts.thumbnailsOnly) {
+    logStep('Generating thumbnails...');
+    const bar = makeProgressBar('Thumbnails', state.tracks.length);
+    let generated = 0;
+    for (const track of state.tracks) {
+      bar.increment();
+      // Fix stale hasImage flags when file is missing from disk
+      if (track.availability.image && track.paths.image && !(await fileExists(track.paths.image))) {
+        track.availability.image = false;
+      }
+      if (track.availability.image && track.paths.image && !track.availability.thumb) {
+        const thumbPath = await ensureThumb(track.paths.image);
+        if (thumbPath) {
+          track.paths.thumb = thumbPath;
+          track.availability.thumb = true;
+          generated++;
+        }
+      }
+    }
+    bar.stop();
+    await writeLibraryState(state);
+    logOk(`Thumbnails generated: ${generated}`);
+    return;
+  }
+
   await stepImport(state, existing);
   await stepProcess(state);
   await stepAnalyze(state);
-  await stepReport(state);
   if (opts.exportType === 'music' || opts.exportType === 'traktor') {
     await stepExport(state);
     if (opts.exportType === 'traktor') {
@@ -2707,10 +2349,8 @@ export async function runPipeline(opts: CliOptions): Promise<void> {
   console.log(chalk.bold.green('\nPipeline Complete'));
   console.log(`${chalk.blue('Elapsed:')} ${elapsed}s`);
   console.log(`${chalk.blue('Library JSON:')} ${path.resolve(LIBRARY_JSON)}`);
-  console.log(`${chalk.blue('HTML report:')} ${path.resolve(REPORT_HTML)}`);
   if (opts.exportType === 'music' || opts.exportType === 'traktor') {
     console.log(`${chalk.blue('Traktor export:')} ${path.resolve(getExportDir())}`);
-    console.log(`${chalk.blue('Zip bundle:')} ${path.resolve(LIBRARY_ZIP)}`);
   }
 }
 

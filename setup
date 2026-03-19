@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- Local-only guard ---
+if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ] || [ -n "${BUILDKITE:-}" ]; then
+  echo "ERROR: This script is for local development only, not CI."
+  exit 1
+fi
+
+BUCKET="suno-audio"
+BUCKET_DOMAIN="suno-audio.tokudu.com"
+PAGES_PROJECT="tokudu-suno"
+PAGES_DOMAIN="suno.tokudu.com"
+ZONE_NAME="tokudu.com"
+CF_API="https://api.cloudflare.com/client/v4"
+
+echo "==> Installing dependencies"
+pnpm install
+
+# --- Local data symlink for dev server ---
+if [ ! -e public/data ]; then
+  mkdir -p data public
+  ln -s ../data public/data
+  echo "==> Created public/data symlink for local development"
+fi
+
+# --- .env.keys setup ---
+if [ ! -f .env.keys ]; then
+  echo ""
+  echo "==> Missing .env.keys (private decryption key)"
+  echo "    Retrieve it from 1Password: \"Github: tokudu/suno (.env.keys)\""
+  echo "    Place it at $(pwd)/.env.keys and re-run this script."
+  exit 1
+fi
+
+# --- Wrangler / Cloudflare auth ---
+echo ""
+echo "==> Checking Cloudflare authentication"
+if ! pnpm exec wrangler whoami &>/dev/null; then
+  echo "    Not logged in to Cloudflare. Launching wrangler login..."
+  pnpm exec wrangler login
+fi
+
+# --- Check if env values need provisioning ---
+echo ""
+echo "==> Checking .env.encrypted values"
+
+ACCOUNT_ID=$(pnpm exec dotenvx get CLOUDFLARE_ACCOUNT_ID -f .env.encrypted 2>/dev/null || true)
+API_TOKEN=$(pnpm exec dotenvx get CLOUDFLARE_API_TOKEN -f .env.encrypted 2>/dev/null || true)
+
+if [ -z "$ACCOUNT_ID" ] || [[ "$ACCOUNT_ID" == *"your-"* ]]; then
+  echo "    CLOUDFLARE_ACCOUNT_ID is not set. Detecting from wrangler..."
+  ACCOUNT_ID=$(pnpm exec wrangler whoami 2>/dev/null | grep -oE '[0-9a-f]{32}' | head -1)
+  if [ -z "$ACCOUNT_ID" ]; then
+    echo "    ERROR: Could not detect account ID. Run 'wrangler whoami' to debug."
+    exit 1
+  fi
+  echo "    Found account ID: ${ACCOUNT_ID}"
+  pnpm exec dotenvx set CLOUDFLARE_ACCOUNT_ID "$ACCOUNT_ID" -f .env.encrypted
+fi
+
+if [ -z "$API_TOKEN" ] || [[ "$API_TOKEN" == *"your-"* ]]; then
+  echo ""
+  echo "    CLOUDFLARE_API_TOKEN is not set."
+  echo "    Create an API token at: https://dash.cloudflare.com/profile/api-tokens"
+  echo "    Required permissions: Workers R2 Storage (Edit), Cloudflare Pages (Edit), Zone > Zone (Read)"
+  echo ""
+  read -rp "    Paste your API token: " API_TOKEN
+  if [ -z "$API_TOKEN" ]; then
+    echo "    ERROR: No token provided."
+    exit 1
+  fi
+  pnpm exec dotenvx set CLOUDFLARE_API_TOKEN "$API_TOKEN" -f .env.encrypted
+fi
+
+# Helper for Cloudflare API calls
+cf_api() {
+  local method="$1" path="$2" body="${3:-}"
+  local args=(-s -X "$method" -H "Authorization: Bearer ${API_TOKEN}" -H "Content-Type: application/json")
+  if [ -n "$body" ]; then
+    args+=(-d "$body")
+  fi
+  local response
+  response=$(curl "${args[@]}" "${CF_API}${path}")
+  if [ -z "$response" ]; then
+    echo "ERROR: Empty response from ${method} ${path}" >&2
+    exit 1
+  fi
+  echo "$response"
+}
+
+cf_api_require_success() {
+  local label="$1"; shift
+  local result
+  result=$(cf_api "$@")
+  if ! echo "$result" | grep -qE '"success"\s*:\s*true'; then
+    echo "ERROR: ${label} failed." >&2
+    echo "    Response: ${result}" >&2
+    exit 1
+  fi
+  echo "$result"
+}
+
+# =============================================================================
+# R2 Bucket: suno-audio.tokudu.com
+# =============================================================================
+
+echo ""
+echo "==> Checking R2 bucket: ${BUCKET}"
+if pnpm exec wrangler r2 bucket list 2>/dev/null | grep -q "${BUCKET}"; then
+  echo "    Bucket already exists."
+else
+  echo "    Creating R2 bucket: ${BUCKET}"
+  pnpm exec wrangler r2 bucket create "${BUCKET}"
+fi
+
+# --- CORS configuration ---
+echo ""
+echo "==> Configuring CORS on bucket: ${BUCKET}"
+CORS_RULES="{\"rules\":[{\"allowed\":{\"methods\":[\"GET\",\"HEAD\"],\"origins\":[\"https://${PAGES_DOMAIN}\",\"http://localhost:3000\"],\"headers\":[\"*\"]},\"maxAgeSeconds\":86400}]}"
+
+cf_api_require_success "CORS configuration" PUT "/accounts/${ACCOUNT_ID}/r2/buckets/${BUCKET}/cors" "$CORS_RULES" >/dev/null
+echo "    CORS configured."
+
+# --- Resolve zone ID for custom domains ---
+echo ""
+echo "==> Resolving zone ID for ${ZONE_NAME}"
+ZONE_RESULT=$(cf_api GET "/zones?name=${ZONE_NAME}&account.id=${ACCOUNT_ID}")
+ZONE_ID=$(echo "$ZONE_RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); print(r['result'][0]['id'] if r.get('result') else '')" 2>/dev/null)
+if [ -z "$ZONE_ID" ]; then
+  echo "    ERROR: Could not find zone for ${ZONE_NAME}. Is the domain on Cloudflare?"
+  echo "    Response: ${ZONE_RESULT}"
+  exit 1
+fi
+echo "    Zone ID: ${ZONE_ID}"
+
+# --- R2 custom domain ---
+echo ""
+echo "==> Checking R2 custom domain: ${BUCKET_DOMAIN}"
+EXISTING_DOMAINS=$(cf_api GET "/accounts/${ACCOUNT_ID}/r2/buckets/${BUCKET}/domains/custom")
+
+if echo "$EXISTING_DOMAINS" | grep -q "\"${BUCKET_DOMAIN}\""; then
+  echo "    Custom domain already configured."
+else
+  echo "    Adding custom domain ${BUCKET_DOMAIN}..."
+  cf_api_require_success "R2 custom domain" POST "/accounts/${ACCOUNT_ID}/r2/buckets/${BUCKET}/domains/custom" \
+    "{\"domain\":\"${BUCKET_DOMAIN}\",\"zoneId\":\"${ZONE_ID}\",\"enabled\":true}" >/dev/null
+  echo "    Custom domain added."
+fi
+
+# =============================================================================
+# Cloudflare Pages: suno.tokudu.com
+# =============================================================================
+
+echo ""
+echo "==> Checking Pages project: ${PAGES_PROJECT}"
+PAGES_INFO=$(cf_api GET "/accounts/${ACCOUNT_ID}/pages/projects/${PAGES_PROJECT}")
+
+if echo "$PAGES_INFO" | grep -q "\"${PAGES_PROJECT}\""; then
+  echo "    Pages project already exists."
+else
+  echo "    Creating Pages project: ${PAGES_PROJECT}"
+  cf_api_require_success "Pages project creation" POST "/accounts/${ACCOUNT_ID}/pages/projects" \
+    "{\"name\": \"${PAGES_PROJECT}\", \"production_branch\": \"main\"}" >/dev/null
+  echo "    Pages project created."
+fi
+
+# --- Pages custom domain ---
+echo ""
+echo "==> Checking Pages custom domain: ${PAGES_DOMAIN}"
+PAGES_DOMAINS=$(cf_api GET "/accounts/${ACCOUNT_ID}/pages/projects/${PAGES_PROJECT}/domains")
+
+if echo "$PAGES_DOMAINS" | grep -q "\"${PAGES_DOMAIN}\""; then
+  echo "    Custom domain already configured."
+else
+  echo "    Adding custom domain ${PAGES_DOMAIN}..."
+  cf_api_require_success "Pages custom domain" POST "/accounts/${ACCOUNT_ID}/pages/projects/${PAGES_PROJECT}/domains" \
+    "{\"name\": \"${PAGES_DOMAIN}\"}" >/dev/null
+  echo "    Custom domain added."
+fi
+
+echo ""
+echo "==> Setup complete!"
+echo "    Audio/data: https://${BUCKET_DOMAIN}"
+echo "    Website:    https://${PAGES_DOMAIN}"
+echo ""
+echo "    Run 'pnpm sync' to download, process, and upload tracks."

@@ -2,7 +2,7 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
-import { runPipeline } from '../process';
+import { runPipeline } from '../scripts/process';
 
 
 function extractIdFromFileName(fileName: string): string | null {
@@ -62,8 +62,6 @@ describe.sequential('integration pipeline', () => {
     process.chdir(testsRoot);
     process.env.EXPORT_DIR = path.join(testsRoot, 'data', 'traktor');
     await fs.rm(path.join(testsRoot, 'data', 'library.json'), { force: true });
-    await fs.rm(path.join(testsRoot, 'data', 'library.html'), { force: true });
-    await fs.rm(path.join(testsRoot, 'data', 'library.zip'), { force: true });
     await fs.rm(path.join(testsRoot, 'data', 'missing-tracks.txt'), { force: true });
     await runPipeline({ exportType: 'music' });
 
@@ -113,11 +111,9 @@ describe.sequential('integration pipeline', () => {
     expect(withMetadata.length).toBeGreaterThan(0);
   });
 
-  it('creates traktor export folders, copied tracks, playlists, html report, and zip bundle', async () => {
+  it('creates traktor export folders, copied tracks, and playlists', async () => {
     const traktorTracks = path.join(testsRoot, 'data', 'traktor', 'Tracks');
     const traktorPlaylists = path.join(testsRoot, 'data', 'traktor', 'Playlists');
-    const report = path.join(testsRoot, 'data', 'library.html');
-    const zipBundle = path.join(testsRoot, 'data', 'library.zip');
 
     const trackFiles = await fs.readdir(traktorTracks);
     const playlistFiles = await fs.readdir(traktorPlaylists);
@@ -125,17 +121,9 @@ describe.sequential('integration pipeline', () => {
     expect(trackFiles.length).toBeGreaterThan(0);
     expect(playlistFiles.some((f) => f.endsWith('.m3u8'))).toBe(true);
 
-    const reportContent = await fs.readFile(report, 'utf8');
-    expect(reportContent).toContain('TOKUDU Library Report');
-    expect(reportContent).toContain('Hide private tracks');
-    expect(reportContent).not.toContain('Hide missing tracks');
-
     const firstTrack = path.join(traktorTracks, trackFiles[0]);
     const stat = await fs.lstat(firstTrack);
     expect(stat.isSymbolicLink()).toBe(false);
-
-    const zipStat = await fs.stat(zipBundle);
-    expect(zipStat.size).toBeGreaterThan(0);
   });
 
   it('does not overwrite existing exported mp3 files on subsequent exports', async () => {

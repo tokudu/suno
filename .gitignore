@@ -1,16 +1,24 @@
 # Dependencies
 node_modules/
 
-# Generated build artifacts
+# Build output
 build/
+out/
+.next/
+*.tsbuildinfo
 
-# Local source dataset (large, machine-specific)
+# Secrets: .env.encrypted is checked in, .env is decrypted (local only)
+.env
+.env.keys
+.env.local
+
+# Local data (audio files, library.json)
 data/
+public/data
 
 # Legacy generated dirs
 Export/
 Categories/
-out/
 in/
 
 # Logs
@@ -24,5 +32,11 @@ pnpm-debug.log*
 .vscode/
 .idea/
 
-# Worktrees
+# Wrangler local state
+.wrangler/
+
+# Git worktrees
 .worktrees/
+
+
+.playwright-mcp

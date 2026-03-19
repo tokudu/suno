@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { __test__ } from '../process';
+import { __test__ } from '../scripts/process';
 
 describe('parseBpmCandidate', () => {
   it('parses numeric and bpm-text values', () => {

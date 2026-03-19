@@ -45,6 +45,8 @@ type TrackTableProps = {
   onNext: () => void;
   onSeek: (time: number) => void;
   onPlayQueueIndex: (index: number) => void;
+  unlocked: boolean;
+  onUnlock: () => void;
 };
 
 function hashHue(id: string): number {
@@ -123,6 +125,8 @@ export function TrackTable({
   onNext,
   onSeek,
   onPlayQueueIndex,
+  unlocked,
+  onUnlock,
 }: TrackTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'position', desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -346,6 +350,8 @@ export function TrackTable({
           filters={filters}
           onFilterChange={onFilterChange}
           trackCount={rows.length}
+          unlocked={unlocked}
+          onUnlock={onUnlock}
         />
       </div>
 

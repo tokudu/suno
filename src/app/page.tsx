@@ -13,6 +13,7 @@ export default function Home() {
   const { tracks, playlists, tracksById, loading, error } = useLibrary();
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('collection-all-tracks');
   const [filters, setFilters] = useState<Filters>({});
+  const [unlocked, setUnlocked] = useState(false);
 
   const handleFilterChange = useCallback((groupKey: string, playlistId: string | null) => {
     setFilters((prev) => ({ ...prev, [groupKey]: playlistId }));
@@ -50,6 +51,15 @@ export default function Home() {
     });
     return baseIds.filter((id) => filterSets.every((s) => s.has(id)));
   }, [tracks, playlists, selectedPlaylistId, filters, allTrackIdsByPlays]);
+
+  // Hide private tracks unless unlocked
+  const visibleTrackIds = useMemo(() => {
+    if (unlocked) return filteredTrackIds;
+    return filteredTrackIds.filter((id) => {
+      const track = tracksById.get(id);
+      return track?.isPublic === true;
+    });
+  }, [filteredTrackIds, unlocked, tracksById]);
 
   // Use a ref-based callback to break the circular dependency between audio player and playback
   const advanceRef = useRef<() => void>(() => {});
@@ -109,7 +119,7 @@ export default function Home() {
             tracks={tracks}
             playlists={playlists}
             tracksById={tracksById}
-            filteredTrackIds={filteredTrackIds}
+            filteredTrackIds={visibleTrackIds}
             selectedPlaylistId={selectedPlaylistId}
             onPlaylistChange={setSelectedPlaylistId}
             filters={filters}
@@ -128,6 +138,8 @@ export default function Home() {
             onNext={pb.playNext}
             onSeek={audioPlayer.seek}
             onPlayQueueIndex={pb.playQueueIndex}
+            unlocked={unlocked}
+            onUnlock={() => setUnlocked(true)}
           />
         </main>
       </div>

@@ -40,13 +40,11 @@ type TrackTableProps = {
   queue: string[];
   queueIndex: number;
   queueSourcePlaylistId: string | null;
-  continuousPlayback: boolean;
   onPlayPause: () => void;
   onPrev: () => void;
   onNext: () => void;
   onSeek: (time: number) => void;
   onPlayQueueIndex: (index: number) => void;
-  onToggleContinuous: () => void;
 };
 
 function hashHue(id: string): number {
@@ -120,13 +118,11 @@ export function TrackTable({
   queue,
   queueIndex,
   queueSourcePlaylistId,
-  continuousPlayback,
   onPlayPause,
   onPrev,
   onNext,
   onSeek,
   onPlayQueueIndex,
-  onToggleContinuous,
 }: TrackTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'position', desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -429,13 +425,11 @@ export function TrackTable({
         queueIndex={queueIndex}
         queueSourcePlaylistId={queueSourcePlaylistId}
         playlists={playlists}
-        continuousPlayback={continuousPlayback}
         onPlayPause={onPlayPause}
         onPrev={onPrev}
         onNext={onNext}
         onSeek={onSeek}
         onPlayQueueIndex={onPlayQueueIndex}
-        onToggleContinuous={onToggleContinuous}
       />
     </div>
   );

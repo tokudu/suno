@@ -27,13 +27,11 @@ type PlayerProps = {
   queueIndex: number;
   queueSourcePlaylistId: string | null;
   playlists: LibraryPlaylist[];
-  continuousPlayback: boolean;
   onPlayPause: () => void;
   onPrev: () => void;
   onNext: () => void;
   onSeek: (time: number) => void;
   onPlayQueueIndex: (index: number) => void;
-  onToggleContinuous: () => void;
 };
 
 export function Player({
@@ -46,13 +44,11 @@ export function Player({
   queueIndex,
   queueSourcePlaylistId,
   playlists,
-  continuousPlayback,
   onPlayPause,
   onPrev,
   onNext,
   onSeek,
   onPlayQueueIndex,
-  onToggleContinuous,
 }: PlayerProps) {
   const [queueOpen, setQueueOpen] = useState(false);
   const track = currentTrackId ? tracksById.get(currentTrackId) : null;
@@ -74,7 +70,7 @@ export function Player({
           'linear-gradient(180deg, rgba(15,18,27,0.6) 0%, rgba(10,12,18,0.8) 100%)',
       }}
     >
-      <div className="grid grid-cols-1 gap-3 items-center px-3 sm:px-5 py-3 sm:py-3.5 md:grid-cols-[minmax(0,1.2fr)_minmax(280px,1fr)_minmax(200px,0.8fr)] md:gap-4">
+      <div className="grid grid-cols-1 gap-2 items-center px-3 sm:px-4 py-2 sm:py-2.5 md:grid-cols-[minmax(0,1.2fr)_minmax(280px,1fr)_minmax(120px,0.6fr)] md:gap-3">
         {/* Now playing info */}
         <div className="flex items-center gap-3.5 min-w-0">
           {(() => {

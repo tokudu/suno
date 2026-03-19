@@ -123,13 +123,11 @@ export default function Home() {
             queue={pb.queue}
             queueIndex={pb.queueIndex}
             queueSourcePlaylistId={pb.queueSourcePlaylistId}
-            continuousPlayback={pb.continuousPlayback}
             onPlayPause={handlePlayPause}
             onPrev={pb.playPrev}
             onNext={pb.playNext}
             onSeek={audioPlayer.seek}
             onPlayQueueIndex={pb.playQueueIndex}
-            onToggleContinuous={pb.toggleContinuousPlayback}
           />
         </main>
       </div>

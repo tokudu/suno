@@ -8,10 +8,13 @@
     "process": "dotenvx run -f .env.encrypted -- tsx scripts/process.ts",
     "download": "dotenvx run -f .env.encrypted -- tsx scripts/download.ts --force",
     "upload": "dotenvx run -f .env.encrypted -- tsx scripts/upload.ts --force",
+    "status": "dotenvx run -f .env.encrypted -- tsx scripts/status.ts",
     "env:decrypt": "dotenvx decrypt -f .env.encrypted --stdout > .env",
     "env:encrypt": "dotenvx encrypt -f .env --stdout > .env.encrypted",
     "dev": "next dev",
+    "prebuild": "rm -f public/data",
     "build": "next build",
+    "postbuild": "ln -s ../data public/data",
     "deploy": "dotenvx run -f .env.encrypted -- wrangler pages deploy out --project-name tokudu-suno",
     "test": "vitest run",
     "test:watch": "vitest"

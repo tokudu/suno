@@ -55,7 +55,7 @@ export function Player({
 
   const sourceLabel = useMemo(() => {
     const source = playlists.find((p) => p.id === queueSourcePlaylistId);
-    return source?.name || 'Visible playlist';
+    return source?.name || 'All Tracks';
   }, [playlists, queueSourcePlaylistId]);
 
   const subtitle = track

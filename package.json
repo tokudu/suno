@@ -15,7 +15,7 @@
     "dev": "next dev",
     "prebuild": "rm -f public/data",
     "build": "next build",
-    "postbuild": "ln -s ../data public/data",
+    "postbuild": "mkdir -p public && ln -s ../data public/data",
     "deploy": "dotenvx run -f .env.encrypted -- wrangler pages deploy out --project-name tokudu-suno",
     "test": "vitest run",
     "test:watch": "vitest"

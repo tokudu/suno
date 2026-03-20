@@ -21,6 +21,8 @@ import { GradientText } from './ui/gradient-text';
 import { FilterToolbar } from './filter-toolbar';
 import { PlaylistStrip } from './playlist-strip';
 import { Player } from './player';
+import { DjPlayer } from './dj-player';
+import type { useDjMode } from '@/hooks/use-dj-mode';
 
 type TrackTableProps = {
   tracks: FlattenedTrack[];
@@ -47,6 +49,12 @@ type TrackTableProps = {
   onPlayQueueIndex: (index: number) => void;
   unlocked: boolean;
   onUnlock: () => void;
+  djMode: boolean;
+  djActiveDeck: 'A' | 'B';
+  djDeckATrackId: string | null;
+  djDeckBTrackId: string | null;
+  onDjToggle: () => void;
+  djState: ReturnType<typeof useDjMode>;
 };
 
 function hashHue(id: string): number {
@@ -127,6 +135,12 @@ export function TrackTable({
   onPlayQueueIndex,
   unlocked,
   onUnlock,
+  djMode,
+  djActiveDeck,
+  djDeckATrackId,
+  djDeckBTrackId,
+  onDjToggle,
+  djState,
 }: TrackTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'position', desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -387,13 +401,31 @@ export function TrackTable({
             {rows.map((row) => {
               const track = row.original;
               const isCurrent = currentTrackId === track.id;
+              const isDeckA = djMode && djDeckATrackId === track.id;
+              const isDeckB = djMode && djDeckBTrackId === track.id;
               return (
                 <tr
                   key={row.id}
+                  draggable={djMode && track.hasMp3}
+                  onDragStart={
+                    djMode && track.hasMp3
+                      ? (e) => {
+                          e.dataTransfer.setData('application/x-track-id', track.id);
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }
+                      : undefined
+                  }
                   className={cn(
                     'group/row transition-colors duration-150',
-                    isCurrent ? 'bg-[#ff2975]/[0.1]' : 'hover:bg-white/[0.04]',
+                    isDeckA
+                      ? 'bg-[#ff2975]/[0.1]'
+                      : isDeckB
+                        ? 'bg-[#00d4ff]/[0.1]'
+                        : isCurrent
+                          ? 'bg-[#ff2975]/[0.1]'
+                          : 'hover:bg-white/[0.04]',
                     track.isPublic !== true && 'opacity-90',
+                    djMode && track.hasMp3 && 'cursor-grab active:cursor-grabbing',
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
@@ -421,22 +453,46 @@ export function TrackTable({
       </div>
 
       {/* Player footer */}
-      <Player
-        currentTrackId={currentTrackId}
-        tracksById={tracksById}
-        playing={playing}
-        currentTime={currentTime}
-        duration={duration}
-        queue={queue}
-        queueIndex={queueIndex}
-        queueSourcePlaylistId={queueSourcePlaylistId}
-        playlists={playlists}
-        onPlayPause={onPlayPause}
-        onPrev={onPrev}
-        onNext={onNext}
-        onSeek={onSeek}
-        onPlayQueueIndex={onPlayQueueIndex}
-      />
+      {djMode ? (
+        <DjPlayer
+          tracksById={tracksById}
+          deckA={djState.deckA}
+          deckB={djState.deckB}
+          crossfader={djState.crossfader}
+          onCrossfaderChange={djState.setCrossfader}
+          activeDeck={djState.activeDeck}
+          onActiveDeckChange={djState.setActiveDeck}
+          onClose={onDjToggle}
+          onLoadToDeck={(deck, trackId) => {
+            const track = tracksById.get(trackId);
+            if (track) djState.loadToDeck(deck, track);
+          }}
+          autoMix={djState.autoMix}
+          onAutoMixChange={djState.setAutoMix}
+          volumeA={djState.volumeA}
+          volumeB={djState.volumeB}
+          onVolumeAChange={djState.setVolumeA}
+          onVolumeBChange={djState.setVolumeB}
+        />
+      ) : (
+        <Player
+          currentTrackId={currentTrackId}
+          tracksById={tracksById}
+          playing={playing}
+          currentTime={currentTime}
+          duration={duration}
+          queue={queue}
+          queueIndex={queueIndex}
+          queueSourcePlaylistId={queueSourcePlaylistId}
+          playlists={playlists}
+          onPlayPause={onPlayPause}
+          onPrev={onPrev}
+          onNext={onNext}
+          onSeek={onSeek}
+          onPlayQueueIndex={onPlayQueueIndex}
+          onDjToggle={onDjToggle}
+        />
+      )}
     </div>
   );
 }

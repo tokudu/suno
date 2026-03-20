@@ -32,6 +32,7 @@ type PlayerProps = {
   onNext: () => void;
   onSeek: (time: number) => void;
   onPlayQueueIndex: (index: number) => void;
+  onDjToggle: () => void;
 };
 
 export function Player({
@@ -49,6 +50,7 @@ export function Player({
   onNext,
   onSeek,
   onPlayQueueIndex,
+  onDjToggle,
 }: PlayerProps) {
   const [queueOpen, setQueueOpen] = useState(false);
   const track = currentTrackId ? tracksById.get(currentTrackId) : null;
@@ -123,6 +125,12 @@ export function Player({
 
         {/* Right section */}
         <div className="hidden md:flex items-center justify-end gap-2.5 sm:gap-3.5 relative md:flex-nowrap">
+          <button
+            onClick={onDjToggle}
+            className="px-4 py-2.5 text-xs font-semibold tracking-wide border border-white/[0.12] bg-gradient-to-r from-[#ff2975]/20 to-[#00d4ff]/20 text-gray-50 rounded-full cursor-pointer hover:from-[#ff2975]/30 hover:to-[#00d4ff]/30 hover:border-white/[0.2] hover:-translate-y-px transition-all duration-100"
+          >
+            DJ
+          </button>
           <button
             onClick={() => setQueueOpen((o) => !o)}
             className="px-4 py-2.5 text-xs font-semibold tracking-wide border border-white/[0.12] bg-white/[0.08] text-gray-50 rounded-full cursor-pointer hover:bg-white/[0.14] hover:border-white/[0.2] hover:-translate-y-px transition-all duration-100"

@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useMemo } from 'react';
 import { useLibrary } from '@/hooks/use-library';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { usePlayback } from '@/hooks/use-playback';
+import { useDjMode } from '@/hooks/use-dj-mode';
 import { TrackTable } from '@/components/track-table';
 import { FlickeringGrid } from '@/components/ui/flickering-grid';
 
@@ -78,6 +79,34 @@ export default function Home() {
   // Keep the ref in sync
   advanceRef.current = pb.advance;
 
+  // DJ Mode
+  const dj = useDjMode(tracksById);
+
+  const handleDjToggle = useCallback(() => {
+    if (dj.active) {
+      dj.close();
+    } else {
+      audioPlayer.pause();
+      dj.open();
+    }
+  }, [dj, audioPlayer.pause]);
+
+  // When DJ mode is active, clicking a track loads to active deck instead of normal play
+  const handleTogglePlay = useCallback(
+    (track: Parameters<typeof pb.togglePlayback>[0], visiblePlayable: Parameters<typeof pb.togglePlayback>[1], playlistId: string) => {
+      if (dj.active) {
+        if (dj.autoMix) {
+          dj.startWithTrack(track, visiblePlayable);
+        } else {
+          dj.loadToActiveDeck(track);
+        }
+      } else {
+        pb.togglePlayback(track, visiblePlayable, playlistId);
+      }
+    },
+    [dj.active, dj.autoMix, dj.startWithTrack, dj.loadToActiveDeck, pb.togglePlayback],
+  );
+
   const handlePlayPause = useCallback(() => {
     if (!pb.currentTrackId) return;
     if (audioPlayer.state.playing) {
@@ -126,7 +155,7 @@ export default function Home() {
             onFilterChange={handleFilterChange}
             currentTrackId={pb.currentTrackId}
             audioPlaying={audioPlayer.state.playing}
-            onTogglePlay={pb.togglePlayback}
+            onTogglePlay={handleTogglePlay}
             playing={audioPlayer.state.playing}
             currentTime={audioPlayer.state.currentTime}
             duration={audioPlayer.state.duration}
@@ -140,6 +169,12 @@ export default function Home() {
             onPlayQueueIndex={pb.playQueueIndex}
             unlocked={unlocked}
             onUnlock={() => setUnlocked(true)}
+            djMode={dj.active}
+            djActiveDeck={dj.activeDeck}
+            djDeckATrackId={dj.deckA.trackId}
+            djDeckBTrackId={dj.deckB.trackId}
+            onDjToggle={handleDjToggle}
+            djState={dj}
           />
         </main>
       </div>

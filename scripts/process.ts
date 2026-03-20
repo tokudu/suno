@@ -72,6 +72,7 @@ type LibraryTrack = {
     image: string | null;
     thumb: string | null;
     video: string | null;
+    waveform: string | null;
     traktor: string | null;
   };
   availability: {
@@ -81,6 +82,7 @@ type LibraryTrack = {
     image: boolean;
     thumb: boolean;
     video: boolean;
+    waveform: boolean;
     exported: boolean;
   };
   checkpoints: {
@@ -469,6 +471,7 @@ async function readLibraryStateIfExists(): Promise<LibraryState | null> {
           image: (track['imagePath'] as string | null | undefined) ?? null,
           thumb: (track['thumbPath'] as string | null | undefined) ?? null,
           video: (track['videoPath'] as string | null | undefined) ?? null,
+          waveform: (track['waveformPath'] as string | null | undefined) ?? null,
           traktor: (track['traktorPath'] as string | null | undefined) ?? null,
         },
         availability: {
@@ -478,6 +481,7 @@ async function readLibraryStateIfExists(): Promise<LibraryState | null> {
           image: Boolean(track['hasImage']),
           thumb: Boolean(track['hasThumb']),
           video: Boolean(track['hasVideo']),
+          waveform: Boolean(track['hasWaveform']),
           exported: Boolean(track['isExported']),
         },
         checkpoints: {
@@ -553,6 +557,7 @@ async function writeLibraryState(state: LibraryState): Promise<void> {
     imagePath: track.paths.image,
     thumbPath: track.paths.thumb,
     videoPath: track.paths.video,
+    waveformPath: track.paths.waveform,
     path: track.paths.mp3,
     traktorPath: track.paths.traktor,
     hasWav: track.availability.wav,
@@ -561,6 +566,7 @@ async function writeLibraryState(state: LibraryState): Promise<void> {
     hasImage: track.availability.image,
     hasThumb: track.availability.thumb,
     hasVideo: track.availability.video,
+    hasWaveform: track.availability.waveform,
     isExported: track.availability.exported,
     importedAt: track.checkpoints.importedAt,
     processedAt: track.checkpoints.processedAt,
@@ -1653,6 +1659,7 @@ async function stepImport(state: LibraryState, existing: LibraryState | null): P
         image: prev?.paths.image ?? null,
         thumb: prev?.paths.thumb ?? null,
         video: prev?.paths.video ?? null,
+        waveform: prev?.paths.waveform ?? null,
         traktor: prev?.paths.traktor ?? null,
       },
       availability: {
@@ -1662,6 +1669,7 @@ async function stepImport(state: LibraryState, existing: LibraryState | null): P
         image: prev?.availability.image ?? false,
         thumb: prev?.availability.thumb ?? false,
         video: prev?.availability.video ?? false,
+        waveform: prev?.availability.waveform ?? false,
         exported: prev?.availability.exported ?? false,
       },
       checkpoints: {
@@ -1755,6 +1763,15 @@ async function stepProcess(state: LibraryState): Promise<void> {
       if (res.mp3AbsPath) {
         track.paths.mp3 = expectedMp3Rel;
         track.availability.mp3 = true;
+      }
+    }
+
+    // Detect waveform file (generated separately by generate-waveforms.ts)
+    if (track.availability.wav && track.paths.wav) {
+      const waveformRel = track.paths.wav + '.waveform.json';
+      if (await fileExists(waveformRel)) {
+        track.paths.waveform = waveformRel;
+        track.availability.waveform = true;
       }
     }
 

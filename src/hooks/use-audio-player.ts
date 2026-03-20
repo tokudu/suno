@@ -77,5 +77,11 @@ export function useAudioPlayer(onEnded: () => void) {
     setState({ playing: false, currentTime: 0, duration: 0 });
   }, []);
 
-  return { state, play, resume, pause, seek, stop };
+  const setVolume = useCallback((volume: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = Math.max(0, Math.min(1, volume));
+  }, []);
+
+  return { state, play, resume, pause, seek, stop, setVolume };
 }

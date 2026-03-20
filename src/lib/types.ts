@@ -15,6 +15,7 @@ export type FlattenedTrack = {
   imagePath: string | null;
   thumbPath: string | null;
   videoPath: string | null;
+  waveformPath: string | null;
   path: string | null;
   traktorPath: string | null;
   hasWav: boolean;
@@ -23,6 +24,7 @@ export type FlattenedTrack = {
   hasImage: boolean;
   hasThumb: boolean;
   hasVideo: boolean;
+  hasWaveform: boolean;
   isExported: boolean;
   importedAt: string;
   processedAt: string | null;
@@ -47,6 +49,17 @@ export type FlattenedTrack = {
   categories: string[];
   metadata?: Record<string, unknown>;
   updatedAt: string;
+};
+
+export type WaveformData = {
+  v: 1;
+  sampleRate: number;
+  fftSize: number;
+  pointCount: number;
+  duration: number;
+  low: number[];
+  mid: number[];
+  high: number[];
 };
 
 export type LibraryPlaylist = {

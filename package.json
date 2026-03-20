@@ -6,6 +6,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "process": "dotenvx run -f .env.encrypted -- tsx scripts/process.ts",
+    "waveforms": "tsx scripts/generate-waveforms.ts",
     "download": "dotenvx run -f .env.encrypted -- tsx scripts/download.ts --force",
     "upload": "dotenvx run -f .env.encrypted -- tsx scripts/upload.ts --force",
     "status": "dotenvx run -f .env.encrypted -- tsx scripts/status.ts",

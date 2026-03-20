@@ -6,6 +6,7 @@ import { formatDuration } from '@/lib/utils';
 import { getTrackImageUrl } from '@/lib/audio-url';
 import { getTrackDisplayTitle } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { Play, Pause } from 'lucide-react';
 import { KeyBadge } from './key-badge';
 import { useWaveform } from '@/hooks/use-waveform';
 
@@ -462,7 +463,7 @@ export function Deck({
                 : 'none',
             }}
           >
-            {deck.playing ? '⏸' : '▶'}
+            {deck.playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
           </button>
         </div>
       </div>

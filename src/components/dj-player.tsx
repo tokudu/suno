@@ -388,7 +388,7 @@ export function Deck({
   return (
     <div
       className={cn(
-        'flex-1 rounded-xl p-3 transition-all duration-200 cursor-pointer border relative overflow-hidden',
+        'flex-1 rounded-xl p-2 sm:p-3 transition-all duration-200 cursor-pointer border relative overflow-hidden',
         dragOver
           ? 'bg-white/[0.12] border-dashed'
           : isActive
@@ -405,7 +405,7 @@ export function Deck({
       <ScrollingWaveform track={track} progress={progress} accentColor={accentColor} />
 
       {/* Deck header */}
-      <div className="relative z-[1] flex items-center gap-2 mb-3">
+      <div className="relative z-[1] flex items-center gap-2 mb-1.5 sm:mb-3">
         <span
           className="text-[10px] font-black tracking-[0.2em] px-2 py-0.5 rounded"
           style={{
@@ -424,7 +424,7 @@ export function Deck({
       </div>
 
       {/* Vinyl + track info */}
-      <div className="relative z-[1] flex items-center gap-3 mb-3">
+      <div className="relative z-[1] flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-3">
         <div className="hidden sm:block">
           <Vinyl track={track} playing={deck.playing} accentColor={accentColor} />
         </div>
@@ -450,7 +450,7 @@ export function Deck({
             }}
             disabled={!track}
             className={cn(
-              'mt-2 w-9 h-9 rounded-full inline-flex items-center justify-center text-sm transition-all duration-150',
+              'mt-1.5 sm:mt-2 w-7 h-7 sm:w-9 sm:h-9 rounded-full inline-flex items-center justify-center text-xs sm:text-sm transition-all duration-150',
               'disabled:opacity-30 disabled:cursor-not-allowed',
             )}
             style={{
@@ -506,7 +506,7 @@ export function DjPlayer({
   return (
     <div className="text-gray-50">
       {/* Decks + Mixer */}
-      <div className="flex flex-col sm:flex-row gap-3 p-3">
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 p-2 sm:p-3">
         {/* Deck A */}
         <Deck
           label="A"

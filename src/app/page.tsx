@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useLibrary } from '@/hooks/use-library';
 import { useAudioPlayer } from '@/hooks/use-audio-player';
 import { usePlayback } from '@/hooks/use-playback';
@@ -15,6 +15,7 @@ export default function Home() {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('collection-all-tracks');
   const [filters, setFilters] = useState<Filters>({});
   const [unlocked, setUnlocked] = useState(false);
+  const [masterVolume, setMasterVolume] = useState(1);
 
   const handleFilterChange = useCallback((groupKey: string, playlistId: string | null) => {
     setFilters((prev) => ({ ...prev, [groupKey]: playlistId }));
@@ -80,7 +81,15 @@ export default function Home() {
   advanceRef.current = pb.advance;
 
   // DJ Mode
-  const dj = useDjMode(tracksById);
+  const dj = useDjMode(tracksById, masterVolume);
+
+  // Apply master volume to queue mode audio
+  useEffect(() => {
+    if (!dj.active) {
+      audioPlayer.setVolume(masterVolume);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterVolume, dj.active]);
 
   const handleDjToggle = useCallback(() => {
     if (dj.active) {
@@ -159,13 +168,11 @@ export default function Home() {
             playing={audioPlayer.state.playing}
             currentTime={audioPlayer.state.currentTime}
             duration={audioPlayer.state.duration}
+            onPlayPause={handlePlayPause}
+            onSeek={audioPlayer.seek}
             queue={pb.queue}
             queueIndex={pb.queueIndex}
             queueSourcePlaylistId={pb.queueSourcePlaylistId}
-            onPlayPause={handlePlayPause}
-            onPrev={pb.playPrev}
-            onNext={pb.playNext}
-            onSeek={audioPlayer.seek}
             onPlayQueueIndex={pb.playQueueIndex}
             unlocked={unlocked}
             onUnlock={() => setUnlocked(true)}
@@ -175,6 +182,10 @@ export default function Home() {
             djDeckBTrackId={dj.deckB.trackId}
             onDjToggle={handleDjToggle}
             djState={dj}
+            continuousPlayback={pb.continuousPlayback}
+            setContinuousPlayback={pb.setContinuousPlayback}
+            masterVolume={masterVolume}
+            onMasterVolumeChange={setMasterVolume}
           />
         </main>
       </div>

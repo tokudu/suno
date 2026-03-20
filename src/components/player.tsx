@@ -62,7 +62,7 @@ export function Player({
 
   const subtitle = track
     ? `${sourceLabel}${queue.length > 0 && queueIndex >= 0 ? ` • ${queueIndex + 1} of ${queue.length}` : ''}`
-    : 'Click any play button to build a queue from the visible playlist.';
+    : 'Click .';
 
   return (
     <div

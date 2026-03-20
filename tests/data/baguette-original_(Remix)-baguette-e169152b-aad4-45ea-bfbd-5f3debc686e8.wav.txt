@@ -1,0 +1,247 @@
+Metadata for: baguette-original_(Remix)-baguette-e169152b-aad4-45ea-bfbd-5f3debc686e8.wav
+Generated: 2026-02-19T01:45:33.332Z
+
+--- Track Information ---
+Title: baguette
+Artist: T O K U D U
+Year: 2026
+
+--- Musical Information ---
+
+--- Creation Details ---
+Prompt: jazzy boom-bap instrumental, ~90bpm, minor key, 4/4, loose swing drums, vinyl saturation, Rhodes chords, muted horns, round bass, chopped spoken vocals, scratch performance, playful laid-back groove
+
+--- Lyrics ---
+(Can we stop with the humping?)
+
+Ba-
+Bette
+Bag
+Bette
+
+Ba-
+Ba-
+Gette
+
+(Squeak)
+
+Ba-gette
+Ba-gette
+
+(Ba)
+(Gette)
+(Ba–ba)
+(Squeak)
+(Gette)
+
+Bag
+Bette
+
+(Squeak)
+
+(Can we stop)
+(with the humping?)
+
+Ba-gette
+(Ba)
+Gette
+
+Cover Art URL: https://cdn2.suno.ai/video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_cover_snapshot_0s_1768361802_image.jpeg
+
+--- Raw API Response ---
+{
+  "status": "complete",
+  "title": "baguette",
+  "play_count": 32,
+  "upvote_count": 0,
+  "allow_comments": true,
+  "id": "e169152b-aad4-45ea-bfbd-5f3debc686e8",
+  "entity_type": "song_schema",
+  "video_url": "https://cdn1.suno.ai/e169152b-aad4-45ea-bfbd-5f3debc686e8.mp4",
+  "video_cover_url": "https://cdn1.suno.ai/video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_processed_video.mp4",
+  "audio_url": "https://cdn1.suno.ai/e169152b-aad4-45ea-bfbd-5f3debc686e8.mp3",
+  "image_url": "https://cdn2.suno.ai/video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_cover_snapshot_0s_1768361802_image.jpeg",
+  "image_large_url": "https://cdn2.suno.ai/video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_video_upload_96401fc3-919e-4549-b2c1-f7ce09ef1200_cover_snapshot_0s_1768361802_image.jpeg",
+  "major_model_version": "v5",
+  "model_name": "chirp-crow",
+  "metadata": {
+    "tags": "jazzy boom-bap instrumental, ~90bpm, minor key, 4/4, loose swing drums, vinyl saturation, Rhodes chords, muted horns, round bass, chopped spoken vocals, scratch performance, playful laid-back groove",
+    "prompt": "(Can we stop with the humping?)\n\nBa-\nBette\nBag\nBette\n\nBa-\nBa-\nGette\n\n(Squeak)\n\nBa-gette\nBa-gette\n\n(Ba)\n(Gette)\n(Ba–ba)\n(Squeak)\n(Gette)\n\nBag\nBette\n\n(Squeak)\n\n(Can we stop)\n(with the humping?)\n\nBa-gette\n(Ba)\nGette",
+    "edited_clip_id": "86779264-d91b-4dd3-9ecc-f65239d6c6ab",
+    "type": "gen",
+    "duration": 129.96,
+    "refund_credits": false,
+    "stream": true,
+    "has_vocal": false,
+    "can_publish_with_vocal": true,
+    "make_instrumental": false,
+    "cover_clip_id": "86779264-d91b-4dd3-9ecc-f65239d6c6ab",
+    "video_upload_width": 1176,
+    "video_upload_height": 1764,
+    "task": "cover",
+    "can_remix": false,
+    "is_remix": true,
+    "priority": 10,
+    "has_stem": false,
+    "video_is_stale": false,
+    "uses_latest_model": true,
+    "model_badges": {
+      "songcard": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        }
+      },
+      "songrow": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "FD429C1A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "FD429C40",
+          "border_color": "00000000"
+        }
+      }
+    },
+    "secondary_badges": [
+      {
+        "display_name": "Cover",
+        "light": {
+          "text_color": "7D7C83",
+          "background_color": "1C1C1F0A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "A3A3A3",
+          "background_color": "FFFFFF0C",
+          "border_color": "00000000"
+        }
+      }
+    ]
+  },
+  "is_liked": false,
+  "user_id": "1b9d2b2a-f65b-4517-8d1e-e3cd161f92a1",
+  "display_name": "T O K U D U",
+  "handle": "tokudu",
+  "is_handle_updated": true,
+  "avatar_image_url": "https://cdn1.suno.ai/20196d80.webp",
+  "is_trashed": false,
+  "is_hidden": false,
+  "created_at": "2026-01-14T03:26:53.956Z",
+  "is_public": true,
+  "reaction": {
+    "play_count": 22,
+    "skip_count": 0,
+    "flagged": false,
+    "clip": "e169152b-aad4-45ea-bfbd-5f3debc686e8",
+    "updated_at": "2026-01-28T22:33:48.906Z"
+  },
+  "is_following_creator": false,
+  "project": {
+    "id": "7b9bcddb-dbd1-4265-b236-5736b20ffc92",
+    "name": "baguette-original (Remix)",
+    "description": "",
+    "is_trashed": false,
+    "is_public": false
+  },
+  "ownership": {
+    "ownership_reason": "subscribed"
+  },
+  "explicit": false,
+  "comment_count": 0,
+  "flag_count": 0,
+  "display_tags": "hip hop, jazz",
+  "is_contest_clip": false,
+  "has_hook": false,
+  "batch_index": 1,
+  "action_config": {
+    "actions": [
+      {
+        "action_type": "add_to_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "like_song",
+        "disabled": false
+      },
+      {
+        "action_type": "share_song",
+        "disabled": false
+      },
+      {
+        "action_type": "dislike_song",
+        "disabled": false
+      },
+      {
+        "action_type": "report_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remove_from_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "edit_song_details",
+        "disabled": false
+      },
+      {
+        "action_type": "delete_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_extend",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_cover",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_reuse_style",
+        "disabled": false
+      },
+      {
+        "action_type": "create_hook",
+        "disabled": false
+      },
+      {
+        "action_type": "remaster",
+        "disabled": false
+      },
+      {
+        "action_type": "download_song",
+        "disabled": false
+      },
+      {
+        "action_type": "allow_comments_toggle_song",
+        "disabled": false
+      },
+      {
+        "action_type": "allow_remix",
+        "disabled": false
+      },
+      {
+        "action_type": "pin_to_profile",
+        "disabled": false
+      },
+      {
+        "action_type": "unpublish_song",
+        "disabled": false
+      },
+      {
+        "action_type": "show_video_cover_in_hooks_feed",
+        "disabled": false
+      }
+    ]
+  }
+}

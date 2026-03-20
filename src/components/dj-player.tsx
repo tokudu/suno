@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import type { FlattenedTrack, WaveformData } from '@/lib/types';
+import type { FlattenedTrack } from '@/lib/types';
 import { formatDuration } from '@/lib/utils';
 import { getTrackImageUrl } from '@/lib/audio-url';
 import { getTrackDisplayTitle } from '@/lib/utils';
@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { KeyBadge } from './key-badge';
 import { useWaveform } from '@/hooks/use-waveform';
 
-type DeckInfo = {
+export type DeckInfo = {
   trackId: string | null;
   playing: boolean;
   currentTime: number;
@@ -26,10 +26,7 @@ type DjPlayerProps = {
   onCrossfaderChange: (value: number) => void;
   activeDeck: 'A' | 'B';
   onActiveDeckChange: (deck: 'A' | 'B') => void;
-  onClose: () => void;
   onLoadToDeck: (deck: 'A' | 'B', trackId: string) => void;
-  autoMix: boolean;
-  onAutoMixChange: (value: boolean) => void;
   volumeA: number;
   volumeB: number;
   onVolumeAChange: (value: number) => void;
@@ -333,7 +330,7 @@ function Vinyl({
 }
 
 /* ── Individual deck ── */
-function Deck({
+export function Deck({
   label,
   deck,
   track,
@@ -342,7 +339,7 @@ function Deck({
   onActivate,
   onDrop: onDropTrack,
 }: {
-  label: string;
+  label?: string;
   deck: DeckInfo;
   track: FlattenedTrack | null;
   accentColor: string;
@@ -417,9 +414,9 @@ function Deck({
             border: `1px solid ${accentColor}44`,
           }}
         >
-          DECK {label}
+          {label ? `DECK ${label}` : 'NOW PLAYING'}
         </span>
-        {isActive && (
+        {isActive && !!label && (
           <span className="text-[9px] uppercase tracking-wider text-white/40">
             active
           </span>
@@ -428,7 +425,9 @@ function Deck({
 
       {/* Vinyl + track info */}
       <div className="relative z-[1] flex items-center gap-3 mb-3">
-        <Vinyl track={track} playing={deck.playing} accentColor={accentColor} />
+        <div className="hidden sm:block">
+          <Vinyl track={track} playing={deck.playing} accentColor={accentColor} />
+        </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold truncate text-white mb-1">
             {track ? getTrackDisplayTitle(track) : 'No track loaded'}
@@ -495,10 +494,7 @@ export function DjPlayer({
   onCrossfaderChange,
   activeDeck,
   onActiveDeckChange,
-  onClose,
   onLoadToDeck,
-  autoMix,
-  onAutoMixChange,
   volumeA,
   volumeB,
   onVolumeAChange,
@@ -508,82 +504,9 @@ export function DjPlayer({
   const trackB = deckB.trackId ? tracksById.get(deckB.trackId) ?? null : null;
 
   return (
-    <div
-      className="text-gray-50 border-t border-white/[0.08] rounded-b-3xl"
-      style={{
-        background:
-          'linear-gradient(180deg, rgba(12,14,22,0.85) 0%, rgba(8,10,16,0.95) 100%)',
-        backdropFilter: 'blur(20px)',
-      }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-black tracking-[0.2em] text-white/60">
-            DJ MODE
-          </span>
-          <div className="flex items-center rounded-full bg-white/[0.06] border border-white/[0.1] p-0.5">
-            <button
-              onClick={() => onActiveDeckChange('A')}
-              className={cn(
-                'text-[10px] font-bold tracking-wider px-3 py-1 rounded-full transition-all duration-150',
-                activeDeck === 'A'
-                  ? 'bg-[#ff2975]/20 text-[#ff2975]'
-                  : 'text-white/40 hover:text-white/60',
-              )}
-            >
-              DECK A
-            </button>
-            <button
-              onClick={() => onActiveDeckChange('B')}
-              className={cn(
-                'text-[10px] font-bold tracking-wider px-3 py-1 rounded-full transition-all duration-150',
-                activeDeck === 'B'
-                  ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
-                  : 'text-white/40 hover:text-white/60',
-              )}
-            >
-              DECK B
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={autoMix}
-              onChange={(e) => onAutoMixChange(e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className={cn(
-              'w-8 h-[18px] rounded-full transition-all duration-200 relative',
-              autoMix
-                ? 'bg-gradient-to-r from-[#ff2975] to-[#8c1eff]'
-                : 'bg-white/[0.12]',
-            )}>
-              <div className={cn(
-                'absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-all duration-200',
-                autoMix ? 'left-[16px]' : 'left-[2px]',
-              )} />
-            </div>
-            <span className={cn(
-              'text-[10px] font-bold tracking-wider transition-colors duration-150',
-              autoMix ? 'text-white/80' : 'text-white/35',
-            )}>
-              AUTO MIX
-            </span>
-          </label>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-full inline-flex items-center justify-center text-white/40 hover:text-white hover:bg-white/[0.1] transition-all duration-150 text-sm"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
+    <div className="text-gray-50">
       {/* Decks + Mixer */}
-      <div className="flex gap-3 p-3">
+      <div className="flex flex-col sm:flex-row gap-3 p-3">
         {/* Deck A */}
         <Deck
           label="A"
@@ -596,7 +519,33 @@ export function DjPlayer({
         />
 
         {/* Center Mixer */}
-        <div className="flex flex-col items-center justify-between gap-3 w-[120px] flex-none py-1">
+        <div className="hidden sm:flex flex-col items-center justify-between gap-3 w-[120px] flex-none py-1">
+          {/* LOAD A / LOAD B toggle */}
+          <div className="flex items-center rounded-full bg-white/[0.06] border border-white/[0.1] p-0.5">
+            <button
+              onClick={() => onActiveDeckChange('A')}
+              className={cn(
+                'text-[10px] font-bold tracking-wider px-3 py-1 rounded-full transition-all duration-150 whitespace-nowrap',
+                activeDeck === 'A'
+                  ? 'bg-[#ff2975]/20 text-[#ff2975]'
+                  : 'text-white/40 hover:text-white/60',
+              )}
+            >
+              LOAD A
+            </button>
+            <button
+              onClick={() => onActiveDeckChange('B')}
+              className={cn(
+                'text-[10px] font-bold tracking-wider px-3 py-1 rounded-full transition-all duration-150 whitespace-nowrap',
+                activeDeck === 'B'
+                  ? 'bg-[#00d4ff]/20 text-[#00d4ff]'
+                  : 'text-white/40 hover:text-white/60',
+              )}
+            >
+              LOAD B
+            </button>
+          </div>
+
           {/* BPM match indicator */}
           {trackA?.bpm && trackB?.bpm && (
             <div className="text-center">
@@ -667,12 +616,6 @@ export function DjPlayer({
         />
       </div>
 
-      {/* Hint */}
-      <div className="text-center text-[10px] text-white/20 pb-2">
-        {autoMix
-          ? 'Click a track to start auto mix queue \u2022 Drag tracks onto decks to override'
-          : 'Drag a track from the library onto a deck, or click to load onto the active deck'}
-      </div>
     </div>
   );
 }

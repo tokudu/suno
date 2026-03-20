@@ -7,8 +7,12 @@ import { useAudioPlayer } from './use-audio-player';
 
 const CROSSFADE_SECONDS = 6;
 
-export function useDjMode(tracksById: Map<string, FlattenedTrack>) {
-  const [active, setActive] = useState(true);
+function isDesktop() {
+  return typeof window !== 'undefined' && window.innerWidth >= 1024;
+}
+
+export function useDjMode(tracksById: Map<string, FlattenedTrack>, masterVolume: number = 1) {
+  const [active, setActive] = useState(isDesktop);
   const [deckATrackId, setDeckATrackId] = useState<string | null>(null);
   const [deckBTrackId, setDeckBTrackId] = useState<string | null>(null);
   const [crossfader, setCrossfader] = useState(0.5);
@@ -56,21 +60,24 @@ export function useDjMode(tracksById: Map<string, FlattenedTrack>) {
   deckAStateRef.current = deckAPlayer.state;
   deckBStateRef.current = deckBPlayer.state;
 
-  // ── Combined volume: per-deck volume × crossfader curve ──
+  const masterVolumeRef = useRef(masterVolume);
+  masterVolumeRef.current = masterVolume;
+
+  // ── Combined volume: per-deck volume × crossfader curve × master ──
   useEffect(() => {
     const xA = Math.cos(crossfader * Math.PI / 2);
     const xB = Math.sin(crossfader * Math.PI / 2);
-    deckAPlayer.setVolume(xA * volumeA);
-    deckBPlayer.setVolume(xB * volumeB);
-  }, [crossfader, volumeA, volumeB, deckAPlayer.setVolume, deckBPlayer.setVolume]);
+    deckAPlayer.setVolume(xA * volumeA * masterVolume);
+    deckBPlayer.setVolume(xB * volumeB * masterVolume);
+  }, [crossfader, volumeA, volumeB, masterVolume, deckAPlayer.setVolume, deckBPlayer.setVolume]);
 
   // Helper to recompute and apply volumes from current refs
   const applyVolumes = useCallback(() => {
     const cf = crossfaderRef.current;
     const xA = Math.cos(cf * Math.PI / 2);
     const xB = Math.sin(cf * Math.PI / 2);
-    deckAPlayer.setVolume(xA * volumeARef.current);
-    deckBPlayer.setVolume(xB * volumeBRef.current);
+    deckAPlayer.setVolume(xA * volumeARef.current * masterVolumeRef.current);
+    deckBPlayer.setVolume(xB * volumeBRef.current * masterVolumeRef.current);
   }, [deckAPlayer.setVolume, deckBPlayer.setVolume]);
 
   // ── Core deck loading ──
@@ -229,7 +236,7 @@ export function useDjMode(tracksById: Map<string, FlattenedTrack>) {
     [activeDeck, loadToDeckInternal],
   );
 
-  /** Start auto mix: load track on deck A, build queue from visiblePlayable */
+  /** Start auto mix: load track on the active deck, build queue from visiblePlayable */
   const startWithTrack = useCallback(
     (track: FlattenedTrack, visiblePlayable: FlattenedTrack[]) => {
       // Cancel any in-progress crossfade
@@ -243,17 +250,20 @@ export function useDjMode(tracksById: Map<string, FlattenedTrack>) {
       queueRef.current = queue;
       queueIndexRef.current = idx >= 0 ? idx + 1 : 1;
 
-      // Load onto deck A, snap crossfader
-      loadToDeckInternal('A', track);
-      setCrossfader(0);
-      setLeadDeck('A');
-      setActiveDeck('A');
+      const deck = activeDeck;
+      const otherPlayer = deck === 'A' ? deckBPlayer : deckAPlayer;
+      const otherSetTrackId = deck === 'A' ? setDeckBTrackId : setDeckATrackId;
 
-      // Stop deck B
-      deckBPlayer.stop();
-      setDeckBTrackId(null);
+      // Load onto the active deck, snap crossfader
+      loadToDeckInternal(deck, track);
+      setCrossfader(deck === 'A' ? 0 : 1);
+      setLeadDeck(deck);
+
+      // Stop the other deck
+      otherPlayer.stop();
+      otherSetTrackId(null);
     },
-    [cancelCrossfadeAnim, loadToDeckInternal, deckBPlayer.stop],
+    [cancelCrossfadeAnim, loadToDeckInternal, activeDeck, deckAPlayer, deckBPlayer],
   );
 
   const toggleDeckPlayPause = useCallback(

@@ -26,11 +26,13 @@ function FilterDropdown({
   options,
   value,
   onChange,
+  className,
 }: {
   label: string;
   options: { id: string; name: string }[];
   value: string | null;
   onChange: (id: string | null) => void;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -50,7 +52,7 @@ function FilterDropdown({
   }, [open, handleClickOutside]);
 
   return (
-    <div ref={ref} className="relative flex items-center gap-1.5">
+    <div ref={ref} className={cn("relative flex items-center gap-1.5", className)}>
       <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 whitespace-nowrap">
         {label}
       </span>
@@ -207,6 +209,7 @@ export function FilterToolbar({ playlists, filters, onFilterChange, trackCount, 
             key={group}
             label={group}
             options={groupedOptions[group] ?? []}
+            className="hidden sm:flex first:flex"
             value={filters[group] ?? null}
             onChange={(id) => onFilterChange(group, id)}
           />

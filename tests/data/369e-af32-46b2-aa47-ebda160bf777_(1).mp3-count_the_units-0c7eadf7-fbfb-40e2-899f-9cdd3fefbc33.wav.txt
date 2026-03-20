@@ -1,0 +1,247 @@
+Metadata for: 369e-af32-46b2-aa47-ebda160bf777_(1).mp3-count_the_units-0c7eadf7-fbfb-40e2-899f-9cdd3fefbc33.wav
+Generated: 2026-02-19T01:47:47.415Z
+
+--- Track Information ---
+Title: count the units
+Artist: T O K U D U
+Year: 2026
+
+--- Musical Information ---
+
+--- Creation Details ---
+Prompt: sci-fi trapstep, 90bpm, D minor, 4/4, deep sub bass, sparse trap drums, metallic percussion, cinematic synth drones, glitch effects, restrained spoken male vocal, dark futuristic tension
+
+--- Lyrics ---
+Do you see that?
+Out past the lights.
+That’s not patrol.
+That’s deployment.
+
+They don’t run.
+They don’t hesitate.
+They arrive already decided.
+
+Count the units.
+Blue optics. Standard issue.
+Same mistake every time.
+They think numbers replace will.
+
+They’ve never met us.
+
+We’re still here.
+We’re still watching.
+We’re still here.
+
+No banners.
+No transmissions.
+Just wait.
+
+Let them deploy.
+Let them believe the street is empty.
+
+When the signal comes…
+we move.
+
+Cover Art URL: https://cdn2.suno.ai/video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_cover_snapshot_0s_1767675408_image.jpeg
+
+--- Raw API Response ---
+{
+  "status": "complete",
+  "title": "count the units",
+  "play_count": 25,
+  "upvote_count": 1,
+  "allow_comments": true,
+  "id": "0c7eadf7-fbfb-40e2-899f-9cdd3fefbc33",
+  "entity_type": "song_schema",
+  "video_url": "https://cdn1.suno.ai/0c7eadf7-fbfb-40e2-899f-9cdd3fefbc33.mp4",
+  "video_cover_url": "https://cdn1.suno.ai/video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_processed_video.mp4",
+  "audio_url": "https://cdn1.suno.ai/0c7eadf7-fbfb-40e2-899f-9cdd3fefbc33.mp3",
+  "image_url": "https://cdn2.suno.ai/video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_cover_snapshot_0s_1767675408_image.jpeg",
+  "image_large_url": "https://cdn2.suno.ai/video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_video_upload_254a1a90-ae9b-4302-876d-f53bcfeb0397_cover_snapshot_0s_1767675408_image.jpeg",
+  "major_model_version": "v5",
+  "model_name": "chirp-crow",
+  "metadata": {
+    "tags": "sci-fi trapstep, 90bpm, D minor, 4/4, deep sub bass, sparse trap drums, metallic percussion, cinematic synth drones, glitch effects, restrained spoken male vocal, dark futuristic tension",
+    "negative_tags": "aggressive, wobble",
+    "prompt": "Do you see that?\nOut past the lights.\nThat’s not patrol.\nThat’s deployment.\n\nThey don’t run.\nThey don’t hesitate.\nThey arrive already decided.\n\nCount the units.\nBlue optics. Standard issue.\nSame mistake every time.\nThey think numbers replace will.\n\nThey’ve never met us.\n\nWe’re still here.\nWe’re still watching.\nWe’re still here.\n\nNo banners.\nNo transmissions.\nJust wait.\n\nLet them deploy.\nLet them believe the street is empty.\n\nWhen the signal comes…\nwe move.",
+    "edited_clip_id": "80d34365-9e02-45de-8e32-98c90c22d217",
+    "type": "gen",
+    "duration": 116.72,
+    "refund_credits": false,
+    "stream": true,
+    "has_vocal": false,
+    "can_publish_with_vocal": true,
+    "make_instrumental": false,
+    "control_sliders": {
+      "audio_weight": 0.86
+    },
+    "cover_clip_id": "80d34365-9e02-45de-8e32-98c90c22d217",
+    "video_upload_width": 720,
+    "video_upload_height": 1280,
+    "task": "cover",
+    "can_remix": false,
+    "is_remix": false,
+    "priority": 10,
+    "has_stem": false,
+    "video_is_stale": false,
+    "uses_latest_model": true,
+    "model_badges": {
+      "songcard": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        }
+      },
+      "songrow": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "FD429C1A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "FD429C40",
+          "border_color": "00000000"
+        }
+      }
+    },
+    "secondary_badges": [
+      {
+        "display_name": "Cover",
+        "light": {
+          "text_color": "7D7C83",
+          "background_color": "1C1C1F0A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "A3A3A3",
+          "background_color": "FFFFFF0C",
+          "border_color": "00000000"
+        }
+      }
+    ]
+  },
+  "is_liked": false,
+  "user_id": "1b9d2b2a-f65b-4517-8d1e-e3cd161f92a1",
+  "display_name": "T O K U D U",
+  "handle": "tokudu",
+  "is_handle_updated": true,
+  "avatar_image_url": "https://cdn1.suno.ai/20196d80.webp",
+  "is_trashed": false,
+  "is_hidden": false,
+  "created_at": "2026-01-06T04:21:37.552Z",
+  "is_public": true,
+  "reaction": {
+    "play_count": 18,
+    "skip_count": 0,
+    "flagged": false,
+    "clip": "0c7eadf7-fbfb-40e2-899f-9cdd3fefbc33",
+    "updated_at": "2026-01-30T06:45:57.875Z"
+  },
+  "is_following_creator": false,
+  "project": {
+    "id": "7d66cfd1-af16-494c-bc52-8226ace3ba5b",
+    "name": "369e-af32-46b2-aa47-ebda160bf777 (1).mp3",
+    "description": "",
+    "is_trashed": false,
+    "is_public": false
+  },
+  "ownership": {
+    "ownership_reason": "subscribed"
+  },
+  "explicit": false,
+  "comment_count": 0,
+  "flag_count": 0,
+  "display_tags": "trapstep, electronic, cinematic",
+  "is_contest_clip": false,
+  "has_hook": false,
+  "batch_index": 0,
+  "action_config": {
+    "actions": [
+      {
+        "action_type": "add_to_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "like_song",
+        "disabled": false
+      },
+      {
+        "action_type": "share_song",
+        "disabled": false
+      },
+      {
+        "action_type": "dislike_song",
+        "disabled": false
+      },
+      {
+        "action_type": "report_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remove_from_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "edit_song_details",
+        "disabled": false
+      },
+      {
+        "action_type": "delete_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_extend",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_cover",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_reuse_style",
+        "disabled": false
+      },
+      {
+        "action_type": "create_hook",
+        "disabled": false
+      },
+      {
+        "action_type": "remaster",
+        "disabled": false
+      },
+      {
+        "action_type": "download_song",
+        "disabled": false
+      },
+      {
+        "action_type": "allow_comments_toggle_song",
+        "disabled": false
+      },
+      {
+        "action_type": "allow_remix",
+        "disabled": false
+      },
+      {
+        "action_type": "pin_to_profile",
+        "disabled": false
+      },
+      {
+        "action_type": "unpublish_song",
+        "disabled": false
+      },
+      {
+        "action_type": "show_video_cover_in_hooks_feed",
+        "disabled": false
+      }
+    ]
+  }
+}

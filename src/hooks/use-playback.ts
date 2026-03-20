@@ -109,6 +109,10 @@ export function usePlayback(
     setState((prev) => ({ ...prev, continuousPlayback: !prev.continuousPlayback }));
   }, []);
 
+  const setContinuousPlayback = useCallback((value: boolean) => {
+    setState((prev) => ({ ...prev, continuousPlayback: value }));
+  }, []);
+
   return {
     ...state,
     togglePlayback,
@@ -118,5 +122,6 @@ export function usePlayback(
     playQueueIndex,
     advance,
     toggleContinuousPlayback,
+    setContinuousPlayback,
   };
 }

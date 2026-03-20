@@ -15,13 +15,14 @@ import type { FlattenedTrack, LibraryPlaylist } from '@/lib/types';
 import { toOpenKey, parseTags, formatDuration, formatCreatedDate, getTrackDisplayTitle } from '@/lib/utils';
 import { getAudioSrc, getTrackImageUrl } from '@/lib/audio-url';
 import { cn } from '@/lib/utils';
+import { Play, Pause } from 'lucide-react';
 import { Badge } from './badge';
 import { KeyBadge } from './key-badge';
 import { GradientText } from './ui/gradient-text';
 import { FilterToolbar } from './filter-toolbar';
 import { PlaylistStrip } from './playlist-strip';
-import { Player } from './player';
-import { DjPlayer } from './dj-player';
+import { DjPlayer, Deck } from './dj-player';
+import { QueuePopover } from './queue-popover';
 import type { useDjMode } from '@/hooks/use-dj-mode';
 
 type TrackTableProps = {
@@ -39,13 +40,11 @@ type TrackTableProps = {
   playing: boolean;
   currentTime: number;
   duration: number;
+  onPlayPause: () => void;
+  onSeek: (time: number) => void;
   queue: string[];
   queueIndex: number;
   queueSourcePlaylistId: string | null;
-  onPlayPause: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  onSeek: (time: number) => void;
   onPlayQueueIndex: (index: number) => void;
   unlocked: boolean;
   onUnlock: () => void;
@@ -55,6 +54,10 @@ type TrackTableProps = {
   djDeckBTrackId: string | null;
   onDjToggle: () => void;
   djState: ReturnType<typeof useDjMode>;
+  continuousPlayback: boolean;
+  setContinuousPlayback: (value: boolean) => void;
+  masterVolume: number;
+  onMasterVolumeChange: (value: number) => void;
 };
 
 function hashHue(id: string): number {
@@ -125,13 +128,11 @@ export function TrackTable({
   playing,
   currentTime,
   duration,
+  onPlayPause,
+  onSeek,
   queue,
   queueIndex,
   queueSourcePlaylistId,
-  onPlayPause,
-  onPrev,
-  onNext,
-  onSeek,
   onPlayQueueIndex,
   unlocked,
   onUnlock,
@@ -141,10 +142,22 @@ export function TrackTable({
   djDeckBTrackId,
   onDjToggle,
   djState,
+  continuousPlayback,
+  setContinuousPlayback,
+  masterVolume,
+  onMasterVolumeChange,
 }: TrackTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'position', desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [queueOpen, setQueueOpen] = useState(false);
   const visiblePlayableRef = useRef<FlattenedTrack[]>([]);
+
+  const autoMixOn = djMode ? djState.autoMix : continuousPlayback;
+
+  const queueSourceLabel = useMemo(() => {
+    const source = playlists.find((p) => p.id === queueSourcePlaylistId);
+    return source?.name || 'All Tracks';
+  }, [playlists, queueSourcePlaylistId]);
 
   const positionMap = useMemo(
     () => new Map(filteredTrackIds.map((id, idx) => [id, idx + 1])),
@@ -175,6 +188,26 @@ export function TrackTable({
           const isCurrent = currentTrackId === track.id;
           const isPlaying = isCurrent && audioPlaying;
           const imageUrl = getTrackImageUrl(track);
+          const isDeckA = djMode && djDeckATrackId === track.id;
+          const isDeckB = djMode && djDeckBTrackId === track.id;
+          const onDeck = isDeckA || isDeckB;
+
+          // Overlay content: deck letter in DJ mode, or play/pause icon
+          let overlay: React.ReactNode;
+          if (onDeck) {
+            const deckLabel = isDeckA ? 'A' : 'B';
+            const deckColor = isDeckA ? '#ff2975' : '#00d4ff';
+            overlay = (
+              <span className="text-[15px] font-black" style={{ color: deckColor }}>
+                {deckLabel}
+              </span>
+            );
+          } else if (isPlaying) {
+            overlay = <Pause size={16} fill="currentColor" strokeWidth={0} />;
+          } else {
+            overlay = <Play size={16} fill="currentColor" strokeWidth={0} className="ml-[2px]" />;
+          }
+
           return (
             <div className="relative w-[38px] h-[38px] flex-none">
               {imageUrl ? (
@@ -192,20 +225,18 @@ export function TrackTable({
                   }}
                 />
               )}
-              <button
-                onClick={() => onTogglePlay(track, visiblePlayableRef.current, 'filtered')}
-                disabled={!track.hasMp3}
+              <div
                 className={cn(
-                  'absolute inset-0 w-full h-full rounded-lg text-[13px] inline-flex items-center justify-center cursor-pointer transition-all duration-150',
-                  isPlaying
-                    ? 'bg-black/40 text-white'
-                    : 'bg-black/30 text-white/80 group-hover/row:bg-black/40 group-hover/row:text-white',
-                  'disabled:cursor-not-allowed',
+                  'absolute inset-0 w-full h-full rounded-lg inline-flex items-center justify-center transition-all duration-150 cursor-pointer',
+                  onDeck
+                    ? 'bg-black/50 text-white'
+                    : isPlaying
+                      ? 'bg-black/40 text-white'
+                      : 'bg-black/30 text-white/80 group-hover/row:bg-black/40 group-hover/row:text-white',
                 )}
-                title={isPlaying ? 'Pause' : 'Play'}
               >
-                {isPlaying ? '⏸' : '▶'}
-              </button>
+                {overlay}
+              </div>
             </div>
           );
         },
@@ -298,7 +329,7 @@ export function TrackTable({
         },
       ),
     ],
-    [currentTrackId, audioPlaying, onTogglePlay],
+    [currentTrackId, audioPlaying, onTogglePlay, djMode, djDeckATrackId, djDeckBTrackId],
   );
 
   const table = useReactTable({
@@ -415,8 +446,15 @@ export function TrackTable({
                         }
                       : undefined
                   }
+                  onClick={(e) => {
+                    // Don't trigger on button/link/tag clicks
+                    if ((e.target as HTMLElement).closest('button, a')) return;
+                    if (track.hasMp3) {
+                      onTogglePlay(track, visiblePlayableRef.current, selectedPlaylistId);
+                    }
+                  }}
                   className={cn(
-                    'group/row transition-colors duration-150',
+                    'group/row transition-colors duration-150 cursor-pointer',
                     isDeckA
                       ? 'bg-[#ff2975]/[0.1]'
                       : isDeckB
@@ -453,46 +491,171 @@ export function TrackTable({
       </div>
 
       {/* Player footer */}
-      {djMode ? (
-        <DjPlayer
-          tracksById={tracksById}
-          deckA={djState.deckA}
-          deckB={djState.deckB}
-          crossfader={djState.crossfader}
-          onCrossfaderChange={djState.setCrossfader}
-          activeDeck={djState.activeDeck}
-          onActiveDeckChange={djState.setActiveDeck}
-          onClose={onDjToggle}
-          onLoadToDeck={(deck, trackId) => {
-            const track = tracksById.get(trackId);
-            if (track) djState.loadToDeck(deck, track);
-          }}
-          autoMix={djState.autoMix}
-          onAutoMixChange={djState.setAutoMix}
-          volumeA={djState.volumeA}
-          volumeB={djState.volumeB}
-          onVolumeAChange={djState.setVolumeA}
-          onVolumeBChange={djState.setVolumeB}
-        />
-      ) : (
-        <Player
-          currentTrackId={currentTrackId}
-          tracksById={tracksById}
-          playing={playing}
-          currentTime={currentTime}
-          duration={duration}
-          queue={queue}
-          queueIndex={queueIndex}
-          queueSourcePlaylistId={queueSourcePlaylistId}
-          playlists={playlists}
-          onPlayPause={onPlayPause}
-          onPrev={onPrev}
-          onNext={onNext}
-          onSeek={onSeek}
-          onPlayQueueIndex={onPlayQueueIndex}
-          onDjToggle={onDjToggle}
-        />
-      )}
+      <div
+        className="text-gray-50 border-t border-white/[0.06] rounded-b-3xl"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(12,14,22,0.85) 0%, rgba(8,10,16,0.95) 100%)',
+          backdropFilter: 'blur(20px)',
+        }}
+      >
+        {/* Persistent toolbar */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-2 border-b border-white/[0.06] gap-3">
+          {/* Left: PLAYER header */}
+          <div className="flex items-center gap-3 flex-none">
+						<span className="text-[11px] font-black tracking-[0.2em] text-white/60 flex-none">
+							PLAYER
+						</span>
+						<label className="items-center gap-1.5 cursor-pointer select-none hidden sm:flex">
+							<input
+								type="checkbox"
+                checked={djMode}
+                onChange={onDjToggle}
+								className="sr-only peer"
+							/>
+							<div className={cn(
+								'w-8 h-[18px] rounded-full transition-all duration-200 relative',
+								djMode
+									? 'bg-gradient-to-r from-[#ff2975] to-[#8c1eff]'
+									: 'bg-white/[0.12]',
+							)}>
+								<div className={cn(
+									'absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-all duration-200',
+									djMode ? 'left-[16px]' : 'left-[2px]',
+								)} />
+							</div>
+							<span className={cn(
+								'text-[10px] font-bold tracking-wider transition-colors duration-150 whitespace-nowrap hidden sm:inline',
+								djMode ? 'text-white/80' : 'text-white/35',
+							)}>
+								DUAL DECKS
+							</span>
+						</label>
+					</div>
+
+          {/* Center: Master volume */}
+          <div className="flex items-center gap-3 min-w-0 flex-1 justify-center max-w-[280px]">
+            <span className="text-[8px] uppercase tracking-[0.15em] text-white/25 flex-none">
+              MASTER VOL
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={masterVolume}
+              onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
+              className="dj-master-volume"
+              style={{
+                background: `linear-gradient(90deg, #ff2975 0%, #8c1eff ${masterVolume * 100}%, rgba(255,255,255,0.12) ${masterVolume * 100}%)`,
+              }}
+            />
+            <span className="text-[9px] uppercase tracking-[0.15em] text-white/30 flex-none">
+              {Math.round(masterVolume * 100)}%
+            </span>
+          </div>
+
+          {/* Right: DJ Mode + Auto Mix + Queue */}
+          <div className="items-center gap-3 flex-none hidden sm:flex">
+            {/* Auto Mix toggle */}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoMixOn}
+                onChange={(e) => {
+                  if (djMode) {
+                    djState.setAutoMix(e.target.checked);
+                  } else {
+                    setContinuousPlayback(e.target.checked);
+                  }
+                }}
+                className="sr-only peer"
+              />
+              <div className={cn(
+                'w-8 h-[18px] rounded-full transition-all duration-200 relative',
+                autoMixOn
+                  ? 'bg-gradient-to-r from-[#ff2975] to-[#8c1eff]'
+                  : 'bg-white/[0.12]',
+              )}>
+                <div className={cn(
+                  'absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-all duration-200',
+                  autoMixOn ? 'left-[16px]' : 'left-[2px]',
+                )} />
+              </div>
+              <span className={cn(
+                'text-[10px] font-bold tracking-wider transition-colors duration-150 whitespace-nowrap hidden sm:inline',
+                autoMixOn ? 'text-white/80' : 'text-white/35',
+              )}>
+                AUTO MIX
+              </span>
+            </label>
+
+            {/* Queue button */}
+            <div className="relative">
+              <button
+                onClick={() => setQueueOpen((o) => !o)}
+                disabled={!autoMixOn}
+                className={cn(
+                  'text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-all duration-150 whitespace-nowrap',
+                  autoMixOn
+                    ? 'border-white/[0.12] bg-white/[0.08] text-white/70 hover:bg-white/[0.14] hover:text-white cursor-pointer'
+                    : 'border-white/[0.06] bg-transparent text-white/20 cursor-not-allowed',
+                )}
+              >
+                Queue
+              </button>
+              <QueuePopover
+                open={queueOpen}
+                onClose={() => setQueueOpen(false)}
+                queue={queue}
+                queueIndex={queueIndex}
+                tracksById={tracksById}
+                sourceLabel={queueSourceLabel}
+                onPlayIndex={onPlayQueueIndex}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Player content */}
+        {djMode ? (
+          <DjPlayer
+            tracksById={tracksById}
+            deckA={djState.deckA}
+            deckB={djState.deckB}
+            crossfader={djState.crossfader}
+            onCrossfaderChange={djState.setCrossfader}
+            activeDeck={djState.activeDeck}
+            onActiveDeckChange={djState.setActiveDeck}
+            onLoadToDeck={(deck, trackId) => {
+              const track = tracksById.get(trackId);
+              if (track) djState.loadToDeck(deck, track);
+            }}
+            volumeA={djState.volumeA}
+            volumeB={djState.volumeB}
+            onVolumeAChange={djState.setVolumeA}
+            onVolumeBChange={djState.setVolumeB}
+          />
+        ) : (
+          <div className="p-3">
+            <Deck
+              deck={{
+                trackId: currentTrackId,
+                playing,
+                currentTime,
+                duration,
+                seek: onSeek,
+                playPause: onPlayPause,
+              }}
+              track={currentTrackId ? tracksById.get(currentTrackId) ?? null : null}
+              accentColor="#ff2975"
+              isActive={true}
+              onActivate={() => {}}
+              onDrop={() => {}}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

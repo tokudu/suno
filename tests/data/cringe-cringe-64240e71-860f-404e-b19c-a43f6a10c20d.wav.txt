@@ -1,0 +1,265 @@
+Metadata for: cringe-cringe-64240e71-860f-404e-b19c-a43f6a10c20d.wav
+Generated: 2026-02-19T01:56:23.846Z
+
+--- Track Information ---
+Title: cringe
+Artist: T O K U D U
+Year: 2025
+
+--- Musical Information ---
+
+--- Creation Details ---
+Prompt: underground electronic, 90bpm, D minor, half-time groove, deep sub-bass, chopped vocal hits, metallic percussion, filtered synth arps, female spoken samples, minimal drop cuts, dark warehouse energy
+
+--- Lyrics ---
+[Intro – instrumental, distant warehouse rumble, filtered noise]
+
+[Build 1 – half-time pulse, muted kick, ticking metallic percussion]
+Artists are losing sight of why they started making music  
+(why we started, why we started)  
+Our community is losing touch with their creative side  
+
+[Instrumental Section – filtered sub swell, chopped metal hits]
+
+[Verse 1 – hypnotic, chopped vocal hits]
+Society made us afraid to express our true creative ideas  
+Afraid to sound different  
+Afraid to be ignored  
+Afraid to be real (be real)
+
+[Instrumental Section – arp filtering up, drop cuts]
+
+[Verse 2 – restrained, spoken, looping]
+Feeling forced to make something fake  
+Just to be seen  
+Just to be fed  
+Just to survive the feed (the feed)  
+Doing whatever it takes to please the algorithm  
+Likes, views, numbers on a screen  
+
+[Build 2 – tension rise, metallic rolls]
+Did we forget we make music for the love of it?  
+Did we forget?  
+Did we forget?  
+
+[Chorus – minimal chant, dark and direct]
+We are artists  
+Not content creators  
+We are artists  
+Not content creators  
+
+[Drop – deep sub-bass, minimal drop cuts]
+
+[Mid Breakdown – muffled TV broadcast, band-pass, room noise]
+TikTok has changed the music industry forever.  
+Instead of standard press tours to promote an album, now music promotion looks more like this.  
+What if there was a song that started off like (mumbling)  
+And that's not necessarily a good or bad thing...
+
+[Instrumental Breakdown – hollow pads, echoing metal tails, no drums]
+
+[Verse 3 – calm, resolute, spoken]
+The music is what’s important  
+(The music)  
+Not the post  
+Not the timing  
+Not the format  
+
+[Build 3 – looping mantra, pressure rising]
+Remember why we fell in love with music  
+Remember  
+Remember  
+
+[Final Drop – sub hits return, darker, heavier]
+
+[Final Chorus – stripped, emotional]
+To remember how magical it feels  
+When you create something  
+You’re genuinely proud of  
+
+[Outro – whispered, beat dissolves]
+We are artists  
+Not content creators
+
+Cover Art URL: https://cdn2.suno.ai/image_64240e71-860f-404e-b19c-a43f6a10c20d.jpeg
+
+--- Raw API Response ---
+{
+  "status": "complete",
+  "title": "cringe",
+  "play_count": 12,
+  "upvote_count": 0,
+  "allow_comments": true,
+  "id": "64240e71-860f-404e-b19c-a43f6a10c20d",
+  "entity_type": "song_schema",
+  "video_url": "",
+  "audio_url": "https://cdn1.suno.ai/64240e71-860f-404e-b19c-a43f6a10c20d.mp3",
+  "image_url": "https://cdn2.suno.ai/image_64240e71-860f-404e-b19c-a43f6a10c20d.jpeg",
+  "image_large_url": "https://cdn2.suno.ai/image_large_64240e71-860f-404e-b19c-a43f6a10c20d.jpeg",
+  "major_model_version": "v5",
+  "model_name": "chirp-crow",
+  "metadata": {
+    "tags": "underground electronic, 90bpm, D minor, half-time groove, deep sub-bass, chopped vocal hits, metallic percussion, filtered synth arps, female spoken samples, minimal drop cuts, dark warehouse energy",
+    "prompt": "[Intro – instrumental, distant warehouse rumble, filtered noise]\n\n[Build 1 – half-time pulse, muted kick, ticking metallic percussion]\nArtists are losing sight of why they started making music  \n(why we started, why we started)  \nOur community is losing touch with their creative side  \n\n[Instrumental Section – filtered sub swell, chopped metal hits]\n\n[Verse 1 – hypnotic, chopped vocal hits]\nSociety made us afraid to express our true creative ideas  \nAfraid to sound different  \nAfraid to be ignored  \nAfraid to be real (be real)\n\n[Instrumental Section – arp filtering up, drop cuts]\n\n[Verse 2 – restrained, spoken, looping]\nFeeling forced to make something fake  \nJust to be seen  \nJust to be fed  \nJust to survive the feed (the feed)  \nDoing whatever it takes to please the algorithm  \nLikes, views, numbers on a screen  \n\n[Build 2 – tension rise, metallic rolls]\nDid we forget we make music for the love of it?  \nDid we forget?  \nDid we forget?  \n\n[Chorus – minimal chant, dark and direct]\nWe are artists  \nNot content creators  \nWe are artists  \nNot content creators  \n\n[Drop – deep sub-bass, minimal drop cuts]\n\n[Mid Breakdown – muffled TV broadcast, band-pass, room noise]\nTikTok has changed the music industry forever.  \nInstead of standard press tours to promote an album, now music promotion looks more like this.  \nWhat if there was a song that started off like (mumbling)  \nAnd that's not necessarily a good or bad thing...\n\n[Instrumental Breakdown – hollow pads, echoing metal tails, no drums]\n\n[Verse 3 – calm, resolute, spoken]\nThe music is what’s important  \n(The music)  \nNot the post  \nNot the timing  \nNot the format  \n\n[Build 3 – looping mantra, pressure rising]\nRemember why we fell in love with music  \nRemember  \nRemember  \n\n[Final Drop – sub hits return, darker, heavier]\n\n[Final Chorus – stripped, emotional]\nTo remember how magical it feels  \nWhen you create something  \nYou’re genuinely proud of  \n\n[Outro – whispered, beat dissolves]\nWe are artists  \nNot content creators",
+    "edited_clip_id": "ec0eeb53-56c3-49be-93c3-63c0db1aeb82",
+    "type": "gen",
+    "duration": 305.96,
+    "refund_credits": false,
+    "stream": true,
+    "has_vocal": false,
+    "can_publish_with_vocal": true,
+    "make_instrumental": false,
+    "control_sliders": {
+      "audio_weight": 0.27
+    },
+    "cover_clip_id": "ec0eeb53-56c3-49be-93c3-63c0db1aeb82",
+    "task": "cover",
+    "can_remix": false,
+    "is_remix": true,
+    "priority": 10,
+    "has_stem": false,
+    "uses_latest_model": true,
+    "model_badges": {
+      "songcard": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "0000004D",
+          "border_color": "00000000"
+        }
+      },
+      "songrow": {
+        "display_name": "v5",
+        "light": {
+          "text_color": "FD429C",
+          "background_color": "FD429C1A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "FD429C",
+          "background_color": "FD429C40",
+          "border_color": "00000000"
+        }
+      }
+    },
+    "secondary_badges": [
+      {
+        "display_name": "Cover",
+        "light": {
+          "text_color": "7D7C83",
+          "background_color": "1C1C1F0A",
+          "border_color": "00000000"
+        },
+        "dark": {
+          "text_color": "A3A3A3",
+          "background_color": "FFFFFF0C",
+          "border_color": "00000000"
+        }
+      }
+    ]
+  },
+  "is_liked": false,
+  "user_id": "1b9d2b2a-f65b-4517-8d1e-e3cd161f92a1",
+  "display_name": "T O K U D U",
+  "handle": "tokudu",
+  "is_handle_updated": true,
+  "avatar_image_url": "https://cdn1.suno.ai/20196d80.webp",
+  "is_trashed": false,
+  "is_hidden": false,
+  "created_at": "2025-12-21T04:14:50.272Z",
+  "is_public": false,
+  "reaction": {
+    "play_count": 11,
+    "skip_count": 0,
+    "flagged": false,
+    "clip": "64240e71-860f-404e-b19c-a43f6a10c20d",
+    "updated_at": "2026-01-05T08:02:46.702Z"
+  },
+  "is_following_creator": false,
+  "project": {
+    "id": "81867ce6-1417-45ef-bf72-6fd91c803982",
+    "name": "cringe",
+    "description": "",
+    "is_trashed": false,
+    "is_public": false
+  },
+  "ownership": {
+    "ownership_reason": "subscribed"
+  },
+  "explicit": false,
+  "comment_count": 0,
+  "flag_count": 0,
+  "display_tags": "underground electronic",
+  "is_contest_clip": false,
+  "has_hook": false,
+  "batch_index": 0,
+  "action_config": {
+    "actions": [
+      {
+        "action_type": "add_to_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "like_song",
+        "disabled": false
+      },
+      {
+        "action_type": "share_song",
+        "disabled": false
+      },
+      {
+        "action_type": "dislike_song",
+        "disabled": false
+      },
+      {
+        "action_type": "report_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remove_from_playlist",
+        "disabled": false
+      },
+      {
+        "action_type": "edit_song_details",
+        "disabled": false
+      },
+      {
+        "action_type": "delete_song",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_extend",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_cover",
+        "disabled": false
+      },
+      {
+        "action_type": "remix_reuse_style",
+        "disabled": false
+      },
+      {
+        "action_type": "create_hook",
+        "disabled": false
+      },
+      {
+        "action_type": "remaster",
+        "disabled": false
+      },
+      {
+        "action_type": "download_song",
+        "disabled": false
+      },
+      {
+        "action_type": "publish_song",
+        "disabled": false
+      }
+    ]
+  }
+}

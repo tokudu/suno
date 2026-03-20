@@ -12,8 +12,7 @@ out/
 .env.keys
 .env.local
 
-# Local data (audio files, library.json)
-data/
+# Local data symlink in public for dev mode
 public/data
 
 # Legacy generated dirs

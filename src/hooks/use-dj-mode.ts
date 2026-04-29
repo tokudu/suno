@@ -7,12 +7,12 @@ import { useAudioPlayer } from './use-audio-player';
 
 const CROSSFADE_SECONDS = 6;
 
-function isDesktop() {
-  return typeof window !== 'undefined' && window.innerWidth >= 1024;
+export function getInitialDjModeActive() {
+  return false;
 }
 
 export function useDjMode(tracksById: Map<string, FlattenedTrack>, masterVolume: number = 1) {
-  const [active, setActive] = useState(isDesktop);
+  const [active, setActive] = useState(getInitialDjModeActive);
   const [deckATrackId, setDeckATrackId] = useState<string | null>(null);
   const [deckBTrackId, setDeckBTrackId] = useState<string | null>(null);
   const [crossfader, setCrossfader] = useState(0.5);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 
 export type AudioPlayerState = {
   playing: boolean;
@@ -21,10 +21,20 @@ export function useAudioPlayer(onEnded: () => void) {
     audioRef.current = audio;
 
     const update = () => {
-      setState({
+      const next = {
         playing: !audio.paused,
         currentTime: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
         duration: Number.isFinite(audio.duration) ? audio.duration : 0,
+      };
+      setState((prev) => {
+        if (
+          prev.playing === next.playing &&
+          prev.currentTime === next.currentTime &&
+          prev.duration === next.duration
+        ) {
+          return prev;
+        }
+        return next;
       });
     };
 
@@ -83,5 +93,8 @@ export function useAudioPlayer(onEnded: () => void) {
     audio.volume = Math.max(0, Math.min(1, volume));
   }, []);
 
-  return { state, play, resume, pause, seek, stop, setVolume };
+  return useMemo(
+    () => ({ state, play, resume, pause, seek, stop, setVolume }),
+    [state, play, resume, pause, seek, stop, setVolume],
+  );
 }

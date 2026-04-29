@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { memo, useMemo, useState, useCallback, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -60,6 +60,26 @@ type TrackTableProps = {
   onMasterVolumeChange: (value: number) => void;
 };
 
+type TrackGridProps = Pick<
+  TrackTableProps,
+  | 'tracks'
+  | 'playlists'
+  | 'tracksById'
+  | 'filteredTrackIds'
+  | 'selectedPlaylistId'
+  | 'onPlaylistChange'
+  | 'filters'
+  | 'onFilterChange'
+  | 'currentTrackId'
+  | 'audioPlaying'
+  | 'onTogglePlay'
+  | 'unlocked'
+  | 'onUnlock'
+  | 'djMode'
+  | 'djDeckATrackId'
+  | 'djDeckBTrackId'
+>;
+
 function hashHue(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
@@ -113,7 +133,7 @@ function CollapsibleTags({ tags }: { tags: string[] }) {
   );
 }
 
-export function TrackTable({
+const TrackGrid = memo(function TrackGrid({
   tracks,
   playlists,
   tracksById,
@@ -125,46 +145,21 @@ export function TrackTable({
   currentTrackId,
   audioPlaying,
   onTogglePlay,
-  playing,
-  currentTime,
-  duration,
-  onPlayPause,
-  onSeek,
-  queue,
-  queueIndex,
-  queueSourcePlaylistId,
-  onPlayQueueIndex,
   unlocked,
   onUnlock,
   djMode,
-  djActiveDeck,
   djDeckATrackId,
   djDeckBTrackId,
-  onDjToggle,
-  djState,
-  continuousPlayback,
-  setContinuousPlayback,
-  masterVolume,
-  onMasterVolumeChange,
-}: TrackTableProps) {
+}: TrackGridProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'position', desc: false }]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [queueOpen, setQueueOpen] = useState(false);
   const visiblePlayableRef = useRef<FlattenedTrack[]>([]);
-
-  const autoMixOn = djMode ? djState.autoMix : continuousPlayback;
-
-  const queueSourceLabel = useMemo(() => {
-    const source = playlists.find((p) => p.id === queueSourcePlaylistId);
-    return source?.name || 'All Tracks';
-  }, [playlists, queueSourcePlaylistId]);
 
   const positionMap = useMemo(
     () => new Map(filteredTrackIds.map((id, idx) => [id, idx + 1])),
     [filteredTrackIds],
   );
 
-  // Filter to matching tracks and attach position
   const data = useMemo(() => {
     const idSet = new Set(filteredTrackIds);
     return tracks
@@ -192,7 +187,6 @@ export function TrackTable({
           const isDeckB = djMode && djDeckBTrackId === track.id;
           const onDeck = isDeckA || isDeckB;
 
-          // Overlay content: deck letter in DJ mode, or play/pause icon
           let overlay: React.ReactNode;
           if (onDeck) {
             const deckLabel = isDeckA ? 'A' : 'B';
@@ -329,7 +323,7 @@ export function TrackTable({
         },
       ),
     ],
-    [currentTrackId, audioPlaying, onTogglePlay, djMode, djDeckATrackId, djDeckBTrackId],
+    [currentTrackId, audioPlaying, djMode, djDeckATrackId, djDeckBTrackId],
   );
 
   const table = useReactTable({
@@ -343,7 +337,6 @@ export function TrackTable({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-
   const { rows } = table.getRowModel();
 
   const visiblePlayable = useMemo(
@@ -355,22 +348,18 @@ export function TrackTable({
   );
   visiblePlayableRef.current = visiblePlayable;
 
-  const handleSort = useCallback(
-    (columnId: string) => {
-      setSorting((prev) => {
-        const existing = prev.find((s) => s.id === columnId);
-        if (existing) {
-          return [{ id: columnId, desc: !existing.desc }];
-        }
-        return [{ id: columnId, desc: columnId === 'created' }];
-      });
-    },
-    [],
-  );
+  const handleSort = useCallback((columnId: string) => {
+    setSorting((prev) => {
+      const existing = prev.find((s) => s.id === columnId);
+      if (existing) {
+        return [{ id: columnId, desc: !existing.desc }];
+      }
+      return [{ id: columnId, desc: columnId === 'created' }];
+    });
+  }, []);
 
   return (
-    <div className="grid grid-rows-[auto_auto_auto_1fr_auto] w-full max-w-full overflow-hidden bg-white/[0.04] border border-white/[0.08] rounded-2xl sm:rounded-3xl shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_20px_45px_rgba(0,0,0,0.3)] backdrop-blur-md pt-3 sm:pt-4" style={{ maxHeight: 'calc(100vh - 24px)', minHeight: 0 }}>
-      {/* Header */}
+    <>
       <div className="flex items-center justify-between px-3 sm:px-4 mb-3 sm:mb-4">
         <h3 className="text-xl sm:text-2xl font-bold m-0 tracking-tight flex items-center gap-2">
           <span className="text-white">TOKUDU</span>
@@ -378,7 +367,6 @@ export function TrackTable({
         </h3>
       </div>
 
-      {/* Playlist strip */}
       <div className="px-3 sm:px-4 mb-3 sm:mb-4 overflow-hidden">
         <PlaylistStrip
           playlists={playlists}
@@ -388,7 +376,6 @@ export function TrackTable({
         />
       </div>
 
-      {/* Filter toolbar */}
       <div className="px-3 sm:px-4 mb-3 sm:mb-4">
         <FilterToolbar
           playlists={playlists}
@@ -400,7 +387,6 @@ export function TrackTable({
         />
       </div>
 
-      {/* Table */}
       <div className="overflow-auto min-h-0">
         <table className="w-full border-collapse">
           <thead>
@@ -447,7 +433,6 @@ export function TrackTable({
                       : undefined
                   }
                   onClick={(e) => {
-                    // Don't trigger on button/link/tag clicks
                     if ((e.target as HTMLElement).closest('button, a')) return;
                     if (track.hasMp3) {
                       onTogglePlay(track, visiblePlayableRef.current, selectedPlaylistId);
@@ -489,6 +474,73 @@ export function TrackTable({
           </tbody>
         </table>
       </div>
+    </>
+  );
+});
+
+export function TrackTable({
+  tracks,
+  playlists,
+  tracksById,
+  filteredTrackIds,
+  selectedPlaylistId,
+  onPlaylistChange,
+  filters,
+  onFilterChange,
+  currentTrackId,
+  audioPlaying,
+  onTogglePlay,
+  playing,
+  currentTime,
+  duration,
+  onPlayPause,
+  onSeek,
+  queue,
+  queueIndex,
+  queueSourcePlaylistId,
+  onPlayQueueIndex,
+  unlocked,
+  onUnlock,
+  djMode,
+  djActiveDeck,
+  djDeckATrackId,
+  djDeckBTrackId,
+  onDjToggle,
+  djState,
+  continuousPlayback,
+  setContinuousPlayback,
+  masterVolume,
+  onMasterVolumeChange,
+}: TrackTableProps) {
+  const [queueOpen, setQueueOpen] = useState(false);
+
+  const autoMixOn = djMode ? djState.autoMix : continuousPlayback;
+
+  const queueSourceLabel = useMemo(() => {
+    const source = playlists.find((p) => p.id === queueSourcePlaylistId);
+    return source?.name || 'All Tracks';
+  }, [playlists, queueSourcePlaylistId]);
+
+  return (
+    <div className="grid grid-rows-[auto_auto_auto_1fr_auto] w-full max-w-full overflow-hidden bg-white/[0.04] border border-white/[0.08] rounded-2xl sm:rounded-3xl shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_20px_45px_rgba(0,0,0,0.3)] backdrop-blur-md pt-3 sm:pt-4" style={{ maxHeight: 'calc(100vh - 24px)', minHeight: 0 }}>
+      <TrackGrid
+        tracks={tracks}
+        playlists={playlists}
+        tracksById={tracksById}
+        filteredTrackIds={filteredTrackIds}
+        selectedPlaylistId={selectedPlaylistId}
+        onPlaylistChange={onPlaylistChange}
+        filters={filters}
+        onFilterChange={onFilterChange}
+        currentTrackId={currentTrackId}
+        audioPlaying={audioPlaying}
+        onTogglePlay={onTogglePlay}
+        unlocked={unlocked}
+        onUnlock={onUnlock}
+        djMode={djMode}
+        djDeckATrackId={djDeckATrackId}
+        djDeckBTrackId={djDeckBTrackId}
+      />
 
       {/* Player footer */}
       <div

@@ -82,6 +82,18 @@ export default function Home() {
 
   // DJ Mode
   const dj = useDjMode(tracksById, masterVolume);
+  const djActionsRef = useRef({
+    open: dj.open,
+    close: dj.close,
+    loadToActiveDeck: dj.loadToActiveDeck,
+    startWithTrack: dj.startWithTrack,
+  });
+  djActionsRef.current = {
+    open: dj.open,
+    close: dj.close,
+    loadToActiveDeck: dj.loadToActiveDeck,
+    startWithTrack: dj.startWithTrack,
+  };
 
   // Apply master volume to queue mode audio
   useEffect(() => {
@@ -93,27 +105,27 @@ export default function Home() {
 
   const handleDjToggle = useCallback(() => {
     if (dj.active) {
-      dj.close();
+      djActionsRef.current.close();
     } else {
       audioPlayer.pause();
-      dj.open();
+      djActionsRef.current.open();
     }
-  }, [dj, audioPlayer.pause]);
+  }, [dj.active, audioPlayer.pause]);
 
   // When DJ mode is active, clicking a track loads to active deck instead of normal play
   const handleTogglePlay = useCallback(
     (track: Parameters<typeof pb.togglePlayback>[0], visiblePlayable: Parameters<typeof pb.togglePlayback>[1], playlistId: string) => {
       if (dj.active) {
         if (dj.autoMix) {
-          dj.startWithTrack(track, visiblePlayable);
+          djActionsRef.current.startWithTrack(track, visiblePlayable);
         } else {
-          dj.loadToActiveDeck(track);
+          djActionsRef.current.loadToActiveDeck(track);
         }
       } else {
         pb.togglePlayback(track, visiblePlayable, playlistId);
       }
     },
-    [dj.active, dj.autoMix, dj.startWithTrack, dj.loadToActiveDeck, pb.togglePlayback],
+    [dj.active, dj.autoMix, pb.togglePlayback],
   );
 
   const handlePlayPause = useCallback(() => {
